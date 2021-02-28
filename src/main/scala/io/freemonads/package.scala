@@ -3,9 +3,9 @@
  */
 
 
-package org.http4s
+package io
 
-package object free {
+package object freemonads {
 
   object api extends Api
   object rest extends Http4sFree

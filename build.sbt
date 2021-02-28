@@ -5,12 +5,17 @@ val LogbackVersion = "1.2.3"
 val Specs2Version = "4.9.3"
 val Http4sSpecs2Version = "1.0.0"
 
+
 lazy val root = (project in file("."))
   .settings(
-    organization := "org.http4s.free",
+    scalaVersion := "2.13.4",
+    organization := "io.freemonads",
     name := "http4s-free",
     version := "0.0.1-SNAPSHOT",
-    scalaVersion := "2.13.4",
+    homepage := Some(url("https://github.com/carlos-verdes/http4s-free")),
+    scmInfo := Some(ScmInfo(url("https://github.com/carlos-verdes/http4s-free"), "git@github.com:carlos-verdes/http4s-free.git")),
+    developers := List(Developer("carlos-verdes", "Carlos Verdes", "cverdes@gmail.com", url("https://github.com/carlos-verdes"))),
+    publishMavenStyle := true,
     libraryDependencies ++= Seq(
       "org.http4s"                 %% "http4s-blaze-server" % Http4sVersion,
       "org.http4s"                 %% "http4s-blaze-client" % Http4sVersion,
@@ -26,3 +31,10 @@ lazy val root = (project in file("."))
     addCompilerPlugin("org.typelevel" %% "kind-projector"     % "0.10.3"),
     addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.1")
   )
+
+publishTo := Some(
+  if (isSnapshot.value)
+    Opts.resolver.sonatypeSnapshots
+  else
+    Opts.resolver.sonatypeStaging
+)
