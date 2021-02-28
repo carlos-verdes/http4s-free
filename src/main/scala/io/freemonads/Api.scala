@@ -3,7 +3,7 @@
  */
 
 
-package org.http4s.free
+package io.freemonads
 
 import cats.{Applicative, ApplicativeError, Functor}
 import cats.data.EitherT

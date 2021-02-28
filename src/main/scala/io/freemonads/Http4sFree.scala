@@ -3,7 +3,7 @@
  */
 
 
-package org.http4s.free
+package io.freemonads
 
 import cats.data.EitherT
 import cats.effect.Sync

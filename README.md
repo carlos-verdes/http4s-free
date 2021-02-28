@@ -1,4 +1,4 @@
-# http4s-fee
+# http4s-free
 
 Free monads on top of http4s
 
@@ -10,10 +10,10 @@ Extract from `HttpfsFreeSpec` test:
   import cats.effect.{IO, Sync, Timer}
   import cats.{Functor, ~>}
   import io.circe.generic.auto._
+  import io.freemonads._
   import org.http4s._
   import org.http4s.circe.CirceEntityCodec._
   import org.http4s.dsl.Http4sDsl
-  import org.http4s.free._
   
   // some model
   case class Mock(id: Option[String], name: String, age: Int)
@@ -133,7 +133,7 @@ As you can see on previous implementation we only need to make sure our effect i
 Example to instance a Cats IO interpreter:
 ```scala
 
-  import org.http4s.free._
+  import io.freemonads._
   
   implicit val interpreters = http4sInterpreter[IO]
 ```
