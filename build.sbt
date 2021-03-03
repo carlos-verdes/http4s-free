@@ -32,9 +32,23 @@ lazy val root = (project in file("."))
     addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.1")
   )
 
-publishTo := Some(
-  if (isSnapshot.value)
-    Opts.resolver.sonatypeSnapshots
-  else
-    Opts.resolver.sonatypeStaging
-)
+addCommandAlias("prepare", ";clean ;headerCreate ;publishSigned")
+
+organizationName := "io.freemonads"
+startYear := Some(2021)
+licenses += ("MIT", new URL("https://opensource.org/licenses/MIT"))
+headerLicenseStyle := HeaderLicenseStyle.SpdxSyntax
+headerSettings(Test)
+
+publishMavenStyle := true
+publishTo :=
+    {
+      val nexus = "https://s01.oss.sonatype.org/"
+      if (isSnapshot.value) Some("snapshots" at nexus + "content/repositories/snapshots")
+      else Some("releases" at nexus + "service/local/staging/deploy/maven2")
+    }
+
+credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credentials")
+
+import xerial.sbt.Sonatype._
+sonatypeProjectHosting := Some(GitHubHosting("carlos-verdes", "http4s-free", "cverdes@gmail.com"))

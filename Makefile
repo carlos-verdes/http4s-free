@@ -34,3 +34,7 @@ ifeq ("$(wildcard $(AMM))", "")
 		chmod +x $(AMM)'
 endif
 	$(AMM)
+
+.PHONY: prepare
+prepare:
+	sbt prepare
