@@ -3,18 +3,17 @@
  */
 
 
-package io.freemonads
+package io.freemonads.http4sFree
 
 import cats.data.EitherT
 import cats.effect.Sync
 import cats.free.Free
-import cats.{FlatMap, InjectK, ~>}
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import cats.{FlatMap, InjectK, ~>}
 import org.http4s.dsl.Http4sDsl
 import org.http4s.{DecodeFailure, EntityDecoder, Request, Response}
 import org.log4s.getLogger
-
 
 trait Http4sFree {
 
@@ -23,6 +22,7 @@ trait Http4sFree {
   private val logger = getLogger
 
   sealed trait Http4sAlgebra[Result]
+
   case class ParseRequest[F[_], R](request: Request[F], ED: EntityDecoder[F, R]) extends Http4sAlgebra[ApiResult[R]]
 
   class Http4sFreeDsl[Algebra[_]](implicit I: InjectK[Http4sAlgebra, Algebra]) {
@@ -38,7 +38,7 @@ trait Http4sFree {
     implicit def instance[F[_]](implicit I: InjectK[Http4sAlgebra, F]): Http4sFreeDsl[F] = new Http4sFreeDsl[F]
   }
 
-  def http4sInterpreter[F[_]: FlatMap]: Http4sAlgebra ~> F = new (Http4sAlgebra ~> F) {
+  def http4sInterpreter[F[_] : FlatMap]: Http4sAlgebra ~> F = new (Http4sAlgebra ~> F) {
 
     override def apply[A](op: Http4sAlgebra[A]): F[A] = op match {
 
@@ -55,7 +55,7 @@ trait Http4sFree {
     }
   }
 
-  implicit def algebraResultToResponse[F[_]: Sync, Algebra[_]](
+  implicit def algebraResultToResponse[F[_] : Sync, Algebra[_]](
       freeOp: ApiCallF[Algebra, F[Response[F]]])(
       implicit interpreters: Algebra ~> F): F[Response[F]] =
     freeOp.value.foldMap(interpreters).flatMap(_.fold(apiErrorToResponse[F], identity))
@@ -63,13 +63,13 @@ trait Http4sFree {
   implicit def decodeFailureToApiError(decodeFailure: DecodeFailure): ApiError =
     RequestFormatError("wrong payload", decodeFailure.message, decodeFailure.cause)
 
-  def resourceFromRequest[F[_]: Sync : FlatMap, R](
+  def resourceFromRequest[F[_] : Sync : FlatMap, R](
       req: Request[F],
       toResponse: R => F[Response[F]])(
       implicit ed: EntityDecoder[F, R]): F[Response[F]] =
     req.attemptAs[R].value.flatMap(_.fold(df => apiErrorToResponse(RequestFormatError(req, df)), toResponse))
 
-  implicit def apiErrorToResponse[F[_]: Sync](restError: ApiError): F[Response[F]] = {
+  implicit def apiErrorToResponse[F[_] : Sync](restError: ApiError): F[Response[F]] = {
 
     val dsl = new Http4sDsl[F] {}
     import dsl._

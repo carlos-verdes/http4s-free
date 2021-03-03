@@ -3,9 +3,9 @@
  */
 
 
-package io
+package io.freemonads
 
-package object freemonads {
+package object http4sFree {
 
   object api extends Api
   object rest extends Http4sFree
