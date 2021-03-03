@@ -3,7 +3,7 @@
  */
 
 
-package io.freemonads
+package io.freemonads.http4sFree
 
 import cats.effect.{IO, Sync, Timer}
 import cats.{Functor, ~>}
@@ -13,7 +13,7 @@ import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.implicits.{http4sKleisliResponseSyntaxOptionT, http4sLiteralsSyntax}
 import org.specs2.Specification
-import org.specs2.matcher.{IOMatchers, MatchResult, Http4sMatchers}
+import org.specs2.matcher.{Http4sMatchers, IOMatchers, MatchResult}
 import org.specs2.specification.core.SpecStructure
 
 trait RestRoutes extends IOMatchers {

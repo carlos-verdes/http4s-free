@@ -3,15 +3,15 @@
  */
 
 
-package io.freemonads
+package io.freemonads.http4sFree
 
-import cats.{Applicative, ApplicativeError, Functor}
 import cats.data.EitherT
 import cats.free.Free
 import cats.syntax.applicative._
 import cats.syntax.applicativeError._
 import cats.syntax.either._
 import cats.syntax.functor._
+import cats.{Applicative, ApplicativeError, Functor}
 
 trait Api {
 

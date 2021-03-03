@@ -10,7 +10,7 @@ Extract from `HttpfsFreeSpec` test:
   import cats.effect.{IO, Sync, Timer}
   import cats.{Functor, ~>}
   import io.circe.generic.auto._
-  import io.freemonads._
+  import io.freemonads.http4sFree._
   import org.http4s._
   import org.http4s.circe.CirceEntityCodec._
   import org.http4s.dsl.Http4sDsl
@@ -133,7 +133,7 @@ As you can see on previous implementation we only need to make sure our effect i
 Example to instance a Cats IO interpreter:
 ```scala
 
-  import io.freemonads._
+  import io.freemonads.http4sFree._
   
   implicit val interpreters = http4sInterpreter[IO]
 ```
