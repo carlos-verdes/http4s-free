@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-package io.freemonads.http4sFree
+package io.freemonads.http
 
 import cats.data.EitherT
 import cats.effect.Sync
@@ -51,7 +51,7 @@ trait Http4sFree {
         request
             .attemptAs[A](ED)
             .value
-            .map(_.fold(df => RequestFormatError(request, df).resultError[A], _.resultOk))
+            .map(_.fold(decodeFailureToApiError(_).resultError[A], _.resultOk))
             .asInstanceOf[F[A]]
     }
   }
@@ -63,12 +63,6 @@ trait Http4sFree {
 
   implicit def decodeFailureToApiError(decodeFailure: DecodeFailure): ApiError =
     RequestFormatError("wrong payload", decodeFailure.message, decodeFailure.cause)
-
-  def resourceFromRequest[F[_] : Sync : FlatMap, R](
-      req: Request[F],
-      toResponse: R => F[Response[F]])(
-      implicit ed: EntityDecoder[F, R]): F[Response[F]] =
-    req.attemptAs[R].value.flatMap(_.fold(df => apiErrorToResponse(RequestFormatError(req, df)), toResponse))
 
   implicit def apiErrorToResponse[F[_] : Sync](restError: ApiError): F[Response[F]] = {
 
@@ -94,7 +88,7 @@ trait Http4sFree {
       case NotImplementedError(method) =>
         val message = s"Method: $method not implemented"
         logger.error(message)
-        InternalServerError(message)
+        NotImplemented(message)
       case ResourceAlreadyExistError(id, cause) =>
         logger.error(s"Resource already exists error (id: $id)")
         cause.foreach(logger.error(_)("Stack trace:"))

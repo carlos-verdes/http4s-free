@@ -3,11 +3,12 @@
  */
 
 
-package io.freemonads.http4sFree
+package io.freemonads.http
 
 import cats.effect.{IO, Sync, Timer}
 import cats.{Functor, ~>}
 import io.circe.generic.auto._
+import io.circe.literal.JsonStringContext
 import org.http4s._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.Http4sDsl
@@ -56,14 +57,24 @@ trait RestRoutes extends IOMatchers {
   val mockService = mockRoutes[IO, Http4sAlgebra]
 
   val createMockRequest: Request[IO] = Request[IO](Method.POST, uri"/mock").withEntity(newMock)
+  val invalidRequest: Request[IO] = Request[IO](Method.POST, uri"/mock").withEntity(json"""{ "wrongJson": "" }""")
+  val notFoundRequest: Request[IO] = Request[IO](Method.GET, uri"/wrongUri")
 }
 
-class HttpfsFreeSpec extends Specification with RestRoutes with Http4sMatchers[IO] with IOMatchers { def is: SpecStructure =
-  s2"""
-      RestSpec should: <br/>
-      Be able to use free monads on Rest APIs     $httpWithFreeMonads
+class HttpfsFreeSpec extends Specification with RestRoutes with Http4sMatchers[IO] with IOMatchers {
 
-      """
+  def is: SpecStructure =
+      s2"""
+          RestSpec should: <br/>
+          Be able to use free monads on Rest APIs        $httpWithFreeMonads
+          Response with 400 error if request parse fails $manageParsingErrors
+          Response with 403 error on auth issues         $manageAuthErrors
+          Response with 404 error if not found           $manageNotFound
+          Response with 409 error on conflict issues     $manageConflictErrors
+          Response with 501 error if not implemented     $manageNotImplementedErrors
+          Response with 500 error for runtime issues     $manageRuntimeErrors
+
+          """
 
   import org.http4s.dsl.io._
 
@@ -72,4 +83,22 @@ class HttpfsFreeSpec extends Specification with RestRoutes with Http4sMatchers[I
       response must haveStatus(Created)
       response must haveBody(createdMock)
     }
+
+  def manageParsingErrors: MatchResult[Any] =
+    mockService.orNotFound(invalidRequest) must returnStatus(BadRequest)
+
+  def manageAuthErrors: MatchResult[Any] =
+    rest.apiErrorToResponse[IO](NonAuthorizedError(None)) must returnStatus(Forbidden)
+
+  def manageNotFound: MatchResult[Any] =
+    rest.apiErrorToResponse[IO](ResourceNotFoundError(Some("someId"))) must returnStatus(NotFound)
+
+  def manageNotImplementedErrors: MatchResult[Any] =
+    rest.apiErrorToResponse[IO](NotImplementedError("some method")) must returnStatus(NotImplemented)
+
+  def manageConflictErrors: MatchResult[Any] =
+    rest.apiErrorToResponse[IO](ResourceAlreadyExistError("someId")) must returnStatus(Conflict)
+
+  def manageRuntimeErrors: MatchResult[Any] =
+    rest.apiErrorToResponse[IO](RuntimeError("someId")) must returnStatus(InternalServerError)
 }

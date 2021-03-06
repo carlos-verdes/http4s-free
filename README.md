@@ -6,41 +6,42 @@ The main goal is to write your API's using free monads + interpreters
 
 ### Example
 Extract from `HttpfsFreeSpec` test:
+
 ```scala
-  import cats.effect.{IO, Sync, Timer}
-  import cats.{Functor, ~>}
-  import io.circe.generic.auto._
-  import io.freemonads.http4sFree._
-  import org.http4s._
-  import org.http4s.circe.CirceEntityCodec._
-  import org.http4s.dsl.Http4sDsl
-  
-  // some model
-  case class Mock(id: Option[String], name: String, age: Int)
+import cats.effect.{IO, Sync, Timer}
+import cats.{Functor, ~>}
+import io.circe.generic.auto._
+import io.freemonads._
+import org.http4s._
+import org.http4s.circe.CirceEntityCodec._
+import org.http4s.dsl.Http4sDsl
 
-  // our routes need the Algebra dsls + interpreters so we can write free monads logic
-  def mockRoutes[F[_]: Sync : Timer : Functor, Algebra[_]](
-      implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
-      interpreters: Algebra ~> F): HttpRoutes[F] = {
+// some model
+case class Mock(id: Option[String], name: String, age: Int)
 
-    val dsl = new Http4sDsl[F]{}
-    import dsl._
-    import http4sFreeDsl._
+// our routes need the Algebra dsls + interpreters so we can write free monads logic
+def mockRoutes[F[_] : Sync : Timer : Functor, Algebra[_]](
+    implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
+    interpreters: Algebra ~> F): HttpRoutes[F] = {
 
-    HttpRoutes.of[F] {
-      case GET -> Root / "mock" =>
-        for  {
-          // here we lift a pure value into free monad
-          mock <- Mock(Some("id123"), "name123", 23).resultOk.liftFree[Algebra]
-        } yield Ok(mock)
+  val dsl = new Http4sDsl[F] {}
+  import dsl._
+  import http4sFreeDsl._
 
-      case r @ POST -> Root / "mock" =>
-        for {
-          // here we use directly http free dsl (which is already a free monad)
-          mockRequest <- parseRequest[F, Mock](r)
-        } yield Created(mockRequest.copy(id = Some("id123")))
-    }
+  HttpRoutes.of[F] {
+    case GET -> Root / "mock" =>
+      for {
+        // here we lift a pure value into free monad
+        mock <- Mock(Some("id123"), "name123", 23).resultOk.liftFree[Algebra]
+      } yield Ok(mock)
+
+    case r@POST -> Root / "mock" =>
+      for {
+        // here we use directly http free dsl (which is already a free monad)
+        mockRequest <- parseRequest[F, Mock](r)
+      } yield Created(mockRequest.copy(id = Some("id123")))
   }
+}
 ```
 
 ### API model
@@ -131,9 +132,10 @@ we want to use `F[_]`.
 As you can see on previous implementation we only need to make sure our effect implements FlatMap type class.
 
 Example to instance a Cats IO interpreter:
+
 ```scala
 
-  import io.freemonads.http4sFree._
-  
-  implicit val interpreters = http4sInterpreter[IO]
+import io.freemonads._
+
+implicit val interpreters = http4sInterpreter[IO]
 ```
