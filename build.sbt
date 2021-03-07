@@ -7,8 +7,6 @@ val Http4sSpecs2Version = "1.0.0"
 
 resolvers ++= Seq(Resolver.sonatypeRepo("releases"))
 
-ThisBuild / version := "0.0.1-SNAPSHOT"
-
 lazy val root = (project in file("."))
   .settings(
     scalaVersion := "2.13.4",
