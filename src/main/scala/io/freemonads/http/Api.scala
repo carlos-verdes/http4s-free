@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-package io.freemonads.http4sFree
+package io.freemonads.http
 
 import cats.data.EitherT
 import cats.free.Free

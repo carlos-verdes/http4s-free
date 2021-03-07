@@ -5,6 +5,7 @@ val LogbackVersion = "1.2.3"
 val Specs2Version = "4.9.3"
 val Http4sSpecs2Version = "1.0.0"
 
+resolvers ++= Seq(Resolver.sonatypeRepo("releases"))
 
 lazy val root = (project in file("."))
   .settings(
@@ -23,6 +24,7 @@ lazy val root = (project in file("."))
       "org.http4s"                 %% "http4s-dsl"          % Http4sVersion,
       "org.typelevel"              %% "cats-free"           % CatsVersion,
       "io.circe"                   %% "circe-generic"       % CirceVersion,
+      "io.circe"                   %% "circe-literal"       % CirceVersion,
       "ch.qos.logback"             %  "logback-classic"     % LogbackVersion,
       "org.specs2"                 %% "specs2-core"         % Specs2Version % Test,
       "org.specs2"                 %% "specs2-cats"         % Specs2Version % Test,
@@ -33,6 +35,7 @@ lazy val root = (project in file("."))
   )
 
 addCommandAlias("prepare", ";clean ;headerCreate ;publishSigned")
+addCommandAlias("sanity", ";clean ;compile ;scalastyle ;coverage ;test ;coverageOff ;coverageReport ;project")
 
 organizationName := "io.freemonads"
 startYear := Some(2021)

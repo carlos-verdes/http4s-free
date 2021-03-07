@@ -3,7 +3,7 @@
  */
 
 
-package io.freemonads.http4sFree
+package io.freemonads.http
 
 import cats.Id
 import cats.effect.IO
