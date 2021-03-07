@@ -7,12 +7,13 @@ val Http4sSpecs2Version = "1.0.0"
 
 resolvers ++= Seq(Resolver.sonatypeRepo("releases"))
 
+ThisBuild / version := "0.0.1-SNAPSHOT"
+
 lazy val root = (project in file("."))
   .settings(
     scalaVersion := "2.13.4",
     organization := "io.freemonads",
     name := "http4s-free",
-    version := "0.0.1-SNAPSHOT",
     homepage := Some(url("https://github.com/carlos-verdes/http4s-free")),
     scmInfo := Some(ScmInfo(url("https://github.com/carlos-verdes/http4s-free"), "git@github.com:carlos-verdes/http4s-free.git")),
     developers := List(Developer("carlos-verdes", "Carlos Verdes", "cverdes@gmail.com", url("https://github.com/carlos-verdes"))),
