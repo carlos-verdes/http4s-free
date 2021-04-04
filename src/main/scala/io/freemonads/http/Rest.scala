@@ -39,7 +39,7 @@ object rest {
     implicit def instance[F[_]](implicit I: InjectK[Http4sAlgebra, F]): Http4sFreeDsl[F] = new Http4sFreeDsl[F]
   }
 
-  def http4sInterpreter[F[_] : FlatMap]: Http4sAlgebra ~> F = new (Http4sAlgebra ~> F) {
+  def http4sInterpreter[F[_]: FlatMap]: Http4sAlgebra ~> F = new (Http4sAlgebra ~> F) {
 
     override def apply[A](op: Http4sAlgebra[A]): F[A] = op match {
 
@@ -62,7 +62,7 @@ object rest {
     freeOp.value.foldMap(interpreters).flatMap(_.fold(apiErrorToResponse[F], identity))
 
   implicit def decodeFailureToApiError(decodeFailure: DecodeFailure): ApiError =
-    RequestFormatError("wrong payload", decodeFailure.message, decodeFailure.cause)
+    RequestFormatError(Some(decodeFailure.message), decodeFailure.cause)
 
   implicit def apiErrorToResponse[F[_] : Sync](restError: ApiError): F[Response[F]] = {
 
@@ -72,31 +72,22 @@ object rest {
     logger.error(s"REST API error: $restError")
 
     restError match {
-      case RequestFormatError(request, details, cause) =>
-        logger.error(s"Request format error, request: $request, error: $details")
-        cause.foreach(logger.error(_)("Stack trace:"))
-        BadRequest(s"Bad format for request: $details")
-      case NonAuthorizedError(resource) =>
-        val message = s"Not authorized to access resource $resource"
-        logger.error(message)
-        Forbidden(message)
-      case ResourceNotFoundError(id, cause) =>
-        val message = s"""Resource not found ${id.map(id => s"(id: $id)").getOrElse("(no id)")}"""
-        logger.error(message)
-        cause.foreach(logger.error(_)("Stack trace:"))
-        NotFound(message)
+      case RequestFormatError(details, cause) =>
+        details.foreach(d => logger.error(s"Request format error: $d"))
+        BadRequest(causeMessage(cause))
+      case NonAuthorizedError(cause) => Forbidden(cause.map(_.getLocalizedMessage).getOrElse(""))
+      case ResourceNotFoundError(cause) => NotFound(causeMessage(cause))
+      case ConflictError(cause) => Conflict(causeMessage(cause))
+      case RuntimeError(cause) => InternalServerError(causeMessage(cause))
       case NotImplementedError(method) =>
         val message = s"Method: $method not implemented"
         logger.error(message)
         NotImplemented(message)
-      case ResourceAlreadyExistError(id, cause) =>
-        logger.error(s"Resource already exists error (id: $id)")
-        cause.foreach(logger.error(_)("Stack trace:"))
-        Conflict(s"Resource already exists (id: $id)")
-      case RuntimeError(message, cause) =>
-        logger.error(s"Runtime error: $message")
-        cause.foreach(logger.error(_)("Stack trace:"))
-        InternalServerError(message + " " + cause.map(_.getLocalizedMessage).getOrElse(""))
     }
+  }
+
+  def causeMessage(cause: Option[Throwable]): String = {
+    cause.foreach(logger.error(_)("API error"))
+    cause.map(_.getLocalizedMessage).getOrElse("")
   }
 }

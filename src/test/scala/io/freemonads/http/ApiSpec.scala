@@ -6,7 +6,6 @@
 package io.freemonads.http
 
 import cats.Id
-import cats.syntax.option._
 import org.specs2.Specification
 import org.specs2.matcher.{IOMatchers, MatchResult}
 import org.specs2.specification.core.SpecStructure
@@ -46,15 +45,15 @@ class ApiSpec extends Specification with ApiCalls with IOMatchers { def is: Spec
   def errorOps: MatchResult[ApiResult[String]] = someApiError.resultError[String] must beAnInstanceOf[ApiResult[String]]
 
   def throwableOps: MatchResult[ApiResult[Int]] =
-    someException.runtimeApiError[Int]("error") must beAnInstanceOf[ApiResult[Int]]
+    someException.resultError[Int] must beAnInstanceOf[ApiResult[Int]]
 
   def resultToCallFree: MatchResult[Any] = "resultOk".liftFree[Id] must beAnInstanceOf[ApiFree[Id, String]]
 
   def noneToResultError: MatchResult[ApiResult[String]] =
-    Option.empty[String].toResult(ResourceNotFoundError("123".some)) must beAnInstanceOf[ApiResult[String]]
+    Option.empty[String].toResult(ResourceNotFoundError()) must beAnInstanceOf[ApiResult[String]]
 
   def someToResultOk: MatchResult[ApiResult[String]] =
-    Some("resultOk").toResult(ResourceNotFoundError("123".some)) must beAnInstanceOf[ApiResult[String]]
+    Some("resultOk").toResult(ResourceNotFoundError()) must beAnInstanceOf[ApiResult[String]]
 
   def composeResults: MatchResult[ApiResult[String]] =
     composedResult must_===("this is name and surname".resultOk)
