@@ -16,7 +16,7 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.{DecodeFailure, EntityDecoder, Request, Response}
 import org.log4s.getLogger
 
-trait Http4sFree {
+object rest {
 
   import api._
 
@@ -28,7 +28,7 @@ trait Http4sFree {
 
   class Http4sFreeDsl[Algebra[_]](implicit I: InjectK[Http4sAlgebra, Algebra]) {
 
-    def parseRequest[F[_], R](request: Request[F])(implicit ED: EntityDecoder[F, R]): ApiCallF[Algebra, R] =
+    def parseRequest[F[_], R](request: Request[F])(implicit ED: EntityDecoder[F, R]): ApiFree[Algebra, R] =
       EitherT(inject(ParseRequest[F, R](request, ED)))
 
     private def inject[F[_], R] = Free.inject[Http4sAlgebra, F]
@@ -57,7 +57,7 @@ trait Http4sFree {
   }
 
   implicit def algebraResultToResponse[F[_] : Sync, Algebra[_]](
-      freeOp: ApiCallF[Algebra, F[Response[F]]])(
+      freeOp: ApiFree[Algebra, F[Response[F]]])(
       implicit interpreters: Algebra ~> F): F[Response[F]] =
     freeOp.value.foldMap(interpreters).flatMap(_.fold(apiErrorToResponse[F], identity))
 

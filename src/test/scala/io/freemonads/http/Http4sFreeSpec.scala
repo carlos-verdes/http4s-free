@@ -76,6 +76,7 @@ class HttpfsFreeSpec extends Specification with RestRoutes with Http4sMatchers[I
 
           """
 
+  import api._
   import org.http4s.dsl.io._
 
   def httpWithFreeMonads: MatchResult[Any] =

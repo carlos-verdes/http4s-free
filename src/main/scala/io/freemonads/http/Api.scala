@@ -8,28 +8,29 @@ package io.freemonads.http
 
 import cats.data.EitherT
 import cats.free.Free
-import cats.syntax.applicative._
-import cats.syntax.applicativeError._
 import cats.syntax.either._
-import cats.syntax.functor._
-import cats.{Applicative, ApplicativeError, Functor}
 
-trait Api {
+object api {
 
   type ApiResult[R] = Either[ApiError, R]
+  type ApiFree[F[_], R] = EitherT[Free[F, *], ApiError, R]
 
-  type ApiCall[F[_], R] = EitherT[F, ApiError, R]
-  type ApiCallF[F[_], R] = EitherT[Free[F, *], ApiError, R]
+  sealed trait ApiError
+  case class RequestFormatError(request: Any, details: Any, cause: Option[Throwable] = None) extends ApiError
+  case class NonAuthorizedError(resource: Option[Any]) extends ApiError
+  case class ResourceNotFoundError(id: Option[Any] = None, cause: Option[Throwable] = None) extends ApiError
+  case class NotImplementedError(method: String) extends ApiError
+  case class ResourceAlreadyExistError(id: String, cause: Option[Throwable] = None) extends ApiError
+  case class RuntimeError(message: String, cause: Option[Throwable] = None) extends ApiError
 
-
-  implicit class ApiResourceOps[R](r: R) {
+  implicit class ApiOps[R](r: R) {
 
     def resultOk: ApiResult[R] = r.asRight
-    def liftCall[F[_]: Applicative]: ApiCall[F, R] = ApiResultOps(r.resultOk).liftCall[F]
-    def liftFree[F[_]]: ApiCallF[F, R] = ApiResultOps(r.resultOk).liftFree[F]
+    def liftFree[F[_]]: ApiFree[F, R] = ApiResultOps(r.resultOk).liftFree[F]
   }
 
   implicit def errorToResultError[R](error: ApiError): ApiResult[R] = error.asLeft[R]
+  def notFound[R](id: Any): ApiResult[R] = ResourceNotFoundError(Some(id)).resultError[R]
 
   implicit class ErrorOps(error: ApiError) {
 
@@ -48,17 +49,7 @@ trait Api {
 
   implicit class ApiResultOps[R](result: ApiResult[R]){
 
-    def liftCall[F[_]: Applicative]: ApiCall[F, R] = EitherT(result.pure[F])
-    def liftFree[F[_]]: ApiCallF[F, R] = EitherT[Free[F, *], ApiError, R](Free.pure(result))
-  }
-
-  implicit class ApiEffectOps[F[_]: Functor, R, E](effect: F[R])(implicit AE: ApplicativeError[F, E]) {
-
-    def handleErrors(body: E => ApiError): ApiCall[F, R] = EitherT(effect.attempt.map(_.leftMap(body)))
-
-    def liftCall: ApiCall[F, R] = handleErrors {
-      case e: Throwable => errorFromThrowable("Error during API call", e)
-    }
+    def liftFree[F[_]]: ApiFree[F, R] = EitherT[Free[F, *], ApiError, R](Free.pure(result))
   }
 
   implicit class ApiOptionOps[R](optional: Option[R]) {
@@ -66,11 +57,3 @@ trait Api {
     def toResult(error: => ApiError): ApiResult[R] = optional.fold(error.resultError[R])(_.resultOk)
   }
 }
-
-sealed trait ApiError
-final case class RequestFormatError(request: Any, details: Any, cause: Option[Throwable] = None) extends ApiError
-final case class NonAuthorizedError(resource: Option[Any]) extends ApiError
-final case class ResourceNotFoundError(id: Option[String] = None, cause: Option[Throwable] = None) extends ApiError
-final case class NotImplementedError(method: String) extends ApiError
-final case class ResourceAlreadyExistError(id: String, cause: Option[Throwable] = None) extends ApiError
-final case class RuntimeError(message: String, cause: Option[Throwable] = None) extends ApiError
