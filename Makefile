@@ -38,3 +38,7 @@ endif
 .PHONY: prepare
 prepare:
 	sbt prepare
+
+.PHONY: startDocker
+startDocker:
+	docker-compose -f docker-compose.yml up -d
