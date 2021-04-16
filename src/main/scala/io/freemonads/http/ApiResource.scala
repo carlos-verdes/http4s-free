@@ -16,16 +16,26 @@ object resource {
 
   import api._
 
+  case class RestResource[R](uri: Uri, body: R)
+
   sealed trait ResourceAlgebra[Result]
-  case class Store[R, Ser[_], Des[_]](uri: Uri, r: R, ser: Ser[R], deser: Des[R]) extends ResourceAlgebra[ApiResult[R]]
-  case class Fetch[R, Des[_]](resourceUri: Uri, deserializer: Des[R]) extends ResourceAlgebra[ApiResult[R]]
+
+  case class Store[R, Ser[_], Des[_]](
+      uri: Uri,
+      resourceBody: R,
+      serializer: Ser[R],
+      deserializer: Des[R]) extends ResourceAlgebra[ApiResult[RestResource[R]]]
+
+  case class Fetch[R, Des[_]](
+      resourceUri: Uri,
+      deserializer: Des[R]) extends ResourceAlgebra[ApiResult[RestResource[R]]]
 
   class ResourceDsl[Algebra[_], Serializer[R], Deserializer[R]](implicit I: InjectK[ResourceAlgebra, Algebra]) {
 
-    def store[R](resourceUri: Uri, r: R)(implicit S: Serializer[R], D: Deserializer[R]): ApiFree[Algebra, R] =
-      EitherT(inject(Store(resourceUri, r, S, D)))
+    def store[R](uri: Uri, r: R)(implicit S: Serializer[R], D: Deserializer[R]): ApiFree[Algebra, RestResource[R]] =
+      EitherT(inject(Store(uri, r, S, D)))
 
-    def fetch[R](resourceUri: Uri)(implicit D: Deserializer[R]): ApiFree[Algebra, R] =
+    def fetch[R](resourceUri: Uri)(implicit D: Deserializer[R]): ApiFree[Algebra, RestResource[R]] =
       EitherT(inject(Fetch(resourceUri, D)))
 
     private def inject = Free.inject[ResourceAlgebra, Algebra]

@@ -2,7 +2,6 @@
  * TODO: License goes here!
  */
 
-
 package io.freemonads
 
 import avokka.arangodb.ArangoConfiguration
@@ -15,10 +14,12 @@ import io.circe.generic.auto._
 import org.http4s.HttpRoutes
 import org.http4s.dsl.io._
 import org.http4s.circe.CirceEntityCodec._
+import org.http4s.headers.Location
 import org.http4s.implicits._
 import org.http4s.server.blaze.BlazeServerBuilder
 import org.typelevel.log4cats._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+
 
 case class Mock(name: String, age: Int)
 
@@ -46,13 +47,13 @@ object Main extends IOApp {
       case r @ GET -> Root / "mocks" / _ =>
         for  {
           mock <- fetch[Mock](r.uri)
-        } yield Ok(mock)
+        } yield Ok(mock.body)
 
       case r @ POST -> Root / "mocks" =>
         for {
           mockRequest <- parseRequest[IO, Mock](r)
           savedMock <- store[Mock](r.uri, mockRequest)
-        } yield Created(savedMock)
+        } yield Created(savedMock.body, Location(savedMock.uri))
     }
   }
 
@@ -63,7 +64,7 @@ object Main extends IOApp {
 
 
   implicit def interpreters: TestAlgebra ~> IO =
-    http4sInterpreter[IO] or arangoResourceInterpret(arangoResource)
+    http4sInterpreter[IO] or arangoResourceInterpreter(arangoResource)
 
 
   val app = testRoutes.orNotFound

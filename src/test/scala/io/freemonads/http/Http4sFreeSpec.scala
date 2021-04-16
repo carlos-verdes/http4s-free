@@ -12,6 +12,7 @@ import io.circe.literal.JsonStringContext
 import org.http4s._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.Http4sDsl
+import org.http4s.headers.Location
 import org.http4s.implicits.{http4sKleisliResponseSyntaxOptionT, http4sLiteralsSyntax}
 import org.specs2.Specification
 import org.specs2.matcher.{Http4sMatchers, IOMatchers, MatchResult}
@@ -48,7 +49,7 @@ trait RestRoutes extends IOMatchers {
       case r @ POST -> Root / "mock" =>
         for {
           mockRequest <- parseRequest[F, Mock](r)
-        } yield Created(mockRequest.copy(id = Some(createdId)))
+        } yield Created(mockRequest.copy(id = Some(createdId)), Location(uri"/mock" / createdId))
     }
   }
 
@@ -81,8 +82,9 @@ class HttpfsFreeSpec extends Specification with RestRoutes with Http4sMatchers[I
 
   def httpWithFreeMonads: MatchResult[Any] =
     mockService.orNotFound(createMockRequest) must returnValue { (response: Response[IO]) =>
-      response must haveStatus(Created)
-      response must haveBody(createdMock)
+      response must haveStatus(Created) and
+          (response must haveBody(createdMock)) and
+          (response must containHeader(Location(createMockRequest.uri / createdMock.id.getOrElse(""))))
     }
 
   def manageParsingErrors: MatchResult[Any] = mockService.orNotFound(invalidRequest) must returnStatus(BadRequest)
