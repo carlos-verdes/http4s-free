@@ -10,28 +10,23 @@ import cats.InjectK
 import cats.data.EitherT
 import cats.free.Free
 import org.http4s.Uri
-import org.http4s.headers.LinkValue
 
 
 object resource {
 
   import api._
 
-  type ResourceId = LinkValue
-
-  val SELF_REL = Some("self")
-
   sealed trait ResourceAlgebra[Result]
-  case class Store[R, Serializer[_]](id: ResourceId, r: R, ser: Serializer[R]) extends ResourceAlgebra[ApiResult[R]]
-  case class Fetch[R, Deserializer[_]](id: ResourceId, deser: Deserializer[R]) extends ResourceAlgebra[ApiResult[R]]
+  case class Store[R, Ser[_], Des[_]](uri: Uri, r: R, ser: Ser[R], deser: Des[R]) extends ResourceAlgebra[ApiResult[R]]
+  case class Fetch[R, Des[_]](resourceUri: Uri, deserializer: Des[R]) extends ResourceAlgebra[ApiResult[R]]
 
   class ResourceDsl[Algebra[_], Serializer[R], Deserializer[R]](implicit I: InjectK[ResourceAlgebra, Algebra]) {
 
-    def store[R](id: Uri, r: R)(implicit S: Serializer[R]): ApiFree[Algebra, R] =
-      EitherT(inject(Store(LinkValue(id, SELF_REL), r, S)))
+    def store[R](resourceUri: Uri, r: R)(implicit S: Serializer[R], D: Deserializer[R]): ApiFree[Algebra, R] =
+      EitherT(inject(Store(resourceUri, r, S, D)))
 
-    def fetch[R](id: Uri)(implicit D: Deserializer[R]): ApiFree[Algebra, R] =
-      EitherT(inject(Fetch(LinkValue(id, SELF_REL), D)))
+    def fetch[R](resourceUri: Uri)(implicit D: Deserializer[R]): ApiFree[Algebra, R] =
+      EitherT(inject(Fetch(resourceUri, D)))
 
     private def inject = Free.inject[ResourceAlgebra, Algebra]
   }

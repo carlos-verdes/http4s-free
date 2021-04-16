@@ -85,21 +85,17 @@ class HttpfsFreeSpec extends Specification with RestRoutes with Http4sMatchers[I
       response must haveBody(createdMock)
     }
 
-  def manageParsingErrors: MatchResult[Any] =
-    mockService.orNotFound(invalidRequest) must returnStatus(BadRequest)
+  def manageParsingErrors: MatchResult[Any] = mockService.orNotFound(invalidRequest) must returnStatus(BadRequest)
 
   def manageAuthErrors: MatchResult[Any] =
     rest.apiErrorToResponse[IO](NonAuthorizedError(None)) must returnStatus(Forbidden)
 
-  def manageNotFound: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](ResourceNotFoundError(Some("someId"))) must returnStatus(NotFound)
+  def manageNotFound: MatchResult[Any] = rest.apiErrorToResponse[IO](ResourceNotFoundError()) must returnStatus(NotFound)
 
   def manageNotImplementedErrors: MatchResult[Any] =
     rest.apiErrorToResponse[IO](NotImplementedError("some method")) must returnStatus(NotImplemented)
 
-  def manageConflictErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](ResourceAlreadyExistError("someId")) must returnStatus(Conflict)
+  def manageConflictErrors: MatchResult[Any] = rest.apiErrorToResponse[IO](ConflictError()) must returnStatus(Conflict)
 
-  def manageRuntimeErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](RuntimeError("someId")) must returnStatus(InternalServerError)
+  def manageRuntimeErrors: MatchResult[Any] = rest.apiErrorToResponse[IO](RuntimeError()) must returnStatus(InternalServerError)
 }

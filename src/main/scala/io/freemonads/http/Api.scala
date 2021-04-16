@@ -16,12 +16,12 @@ object api {
   type ApiFree[F[_], R] = EitherT[Free[F, *], ApiError, R]
 
   sealed trait ApiError
-  case class RequestFormatError(request: Any, details: Any, cause: Option[Throwable] = None) extends ApiError
-  case class NonAuthorizedError(resource: Option[Any]) extends ApiError
-  case class ResourceNotFoundError(id: Option[Any] = None, cause: Option[Throwable] = None) extends ApiError
+  case class RequestFormatError(message: Option[String] = None, cause: Option[Throwable] = None) extends ApiError
+  case class NonAuthorizedError(cause: Option[Throwable]) extends ApiError
+  case class ResourceNotFoundError(cause: Option[Throwable] = None) extends ApiError
   case class NotImplementedError(method: String) extends ApiError
-  case class ResourceAlreadyExistError(id: String, cause: Option[Throwable] = None) extends ApiError
-  case class RuntimeError(message: String, cause: Option[Throwable] = None) extends ApiError
+  case class ConflictError(cause: Option[Throwable] = None) extends ApiError
+  case class RuntimeError(cause: Option[Throwable] = None) extends ApiError
 
   implicit class ApiOps[R](r: R) {
 
@@ -30,21 +30,19 @@ object api {
   }
 
   implicit def errorToResultError[R](error: ApiError): ApiResult[R] = error.asLeft[R]
-  def notFound[R](id: Any): ApiResult[R] = ResourceNotFoundError(Some(id)).resultError[R]
 
   implicit class ErrorOps(error: ApiError) {
 
     def resultError[R]: ApiResult[R] = errorToResultError(error)
   }
 
-  def errorFromThrowable(m: String, t: Throwable): ApiError = RuntimeError(m, Some(t))
+  def errorFromThrowable(t: Throwable): ApiError = RuntimeError(Some(t))
 
   val emptyResult: ApiResult[Unit] = Right(())
 
   implicit class ThrowableOps(t: Throwable) {
 
-    def runtimeApiError[R](message: String): ApiResult[R] = errorFromThrowable(message, t)
-
+    def resultError[R]: ApiResult[R] = errorFromThrowable(t)
   }
 
   implicit class ApiResultOps[R](result: ApiResult[R]){

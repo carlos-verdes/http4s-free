@@ -7,11 +7,10 @@ package io.freemonads.http
 
 import cats.effect.IO
 import cats.~>
-import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._
-import io.freemonads.http.resource.{ResourceAlgebra, SELF_REL}
+import io.circe.{Decoder, Encoder}
+import io.freemonads.http.resource.ResourceAlgebra
 import org.http4s.Uri
-import org.http4s.headers.LinkValue
 import org.http4s.implicits.http4sLiteralsSyntax
 import org.specs2.Specification
 import org.specs2.matcher.{IOMatchers, MatchResult}
@@ -38,11 +37,11 @@ trait Resources extends IOMatchers {
   implicit val interpreter: ResourceAlgebra ~> IO = new (ResourceAlgebra ~> IO) {
     override def apply[A](op: ResourceAlgebra[A]): IO[A] = op match {
 
-      case Store(_, r, _) =>
+      case Store(_, r, _, _) =>
         IO(r.resultOk).asInstanceOf[IO[A]]
 
-      case Fetch(id, _) =>
-        IO(if (id.uri == existingUri) existingMock.resultOk else notFound[Mock](id)).asInstanceOf[IO[A]]
+      case Fetch(resourceUri, _) =>
+        IO(if (resourceUri == existingUri) existingMock.resultOk else ResourceNotFoundError()).asInstanceOf[IO[A]]
     }
   }
 
@@ -71,8 +70,8 @@ class ApiResource extends Specification with Resources with IOMatchers { def is:
       Return not found error for nonexistent resource $fetchNotFound
       """
 
-  import resource.ResourceDsl._
   import api._
+  import resource.ResourceDsl._
 
   implicit val dslInstance = instance[ResourceAlgebra, Encoder, Decoder]
 
@@ -83,7 +82,6 @@ class ApiResource extends Specification with Resources with IOMatchers { def is:
     fetchProgram(existingUri).value.foldMap(interpreter) must returnValue(Right(existingMock))
 
   def fetchNotFound: MatchResult[Any] =
-    fetchProgram(nonexistingUri).value.foldMap(interpreter) must
-        returnValue(notFound[Mock](LinkValue(nonexistingUri, SELF_REL)))
+    fetchProgram(nonexistingUri).value.foldMap(interpreter) must returnValue(ResourceNotFoundError())
 
 }
