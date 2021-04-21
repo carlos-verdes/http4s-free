@@ -50,6 +50,8 @@ lazy val root = (project in file("."))
 addCommandAlias("prepare", ";clean ;headerCreate ;publishSigned")
 addCommandAlias("sanity", ";clean ;compile ;scalastyle ;coverage ;test ;it:test ;coverageOff ;coverageReport ;project")
 
+coverageExcludedPackages := """io.freemonads.Main"""
+
 organizationName := "io.freemonads"
 startYear := Some(2021)
 licenses += ("MIT", new URL("https://opensource.org/licenses/MIT"))

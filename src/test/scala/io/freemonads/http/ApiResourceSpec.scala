@@ -73,7 +73,6 @@ class ApiResource extends Specification with MockResources with specs2.Http4Free
       Return not found error for nonexistent resource $fetchNotFound
       """
 
-  import api._
   import resource.ResourceDsl._
   import resource._
 
@@ -81,5 +80,5 @@ class ApiResource extends Specification with MockResources with specs2.Http4Free
 
   def store: MatchResult[Any] = storeProgram(newMockIdUri, newMock) must resultOk(newMock)
   def fetchFound: MatchResult[Any] = fetchProgram(existingUri) must resultOk(existingMock)
-  def fetchNotFound: MatchResult[Any] = fetchProgram(nonexistingUri) must resultError(ResourceNotFoundError())
+  def fetchNotFound: MatchResult[Any] = fetchProgram(nonexistingUri) must resultErrorNotFound
 }
