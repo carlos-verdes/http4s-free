@@ -82,15 +82,12 @@ class ArangoServiceIT(env: Env)
   def is: SpecStructure = s2"""
       The ArangoDB container should be ready $arangoIsReady
       Store and fetch from ArangoDB          $storeAndFetch
-      Return not found error when document doesn't exist returnNotFound
+      Return not found error when document doesn't exist $returnNotFound
   """
-
-  import http.api._
 
   def arangoIsReady: MatchResult[Future[Boolean]] = isContainerReady(arangoContainer) must beTrue.await
 
   def storeAndFetch: MatchResult[Any] = storeAndFetch(MOCKS_URI, mock1) must resultOk(mock1)
 
-  def returnNotFound: MatchResult[Any] =
-    fetchFromArango(uri"/emptyCollection/123") must resultError(ResourceNotFoundError())
+  def returnNotFound: MatchResult[Any] = fetchFromArango(uri"/emptyCollection/123") must resultErrorNotFound
 }
