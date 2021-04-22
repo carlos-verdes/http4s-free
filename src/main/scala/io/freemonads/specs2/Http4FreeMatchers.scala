@@ -14,7 +14,7 @@ import org.specs2.matcher.{Matcher, Matchers, RunTimedMatchers, ValueCheck}
 
 trait Http4FreeMatchers[F[_]] extends RunTimedMatchers[F] with Matchers {
 
-  import http.api._
+  import api._
 
   def resultOk[A[_], T](check: ValueCheck[T])(implicit interpreter: A ~> F, M: Monad[F]):  Matcher[ApiFree[A, T]] =
     returnValue[ApiResult[T]](beRight(check)) ^^ (_.value.foldMap(interpreter).aka("Free logic"), 0)

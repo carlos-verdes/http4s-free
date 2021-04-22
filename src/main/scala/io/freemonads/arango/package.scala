@@ -19,7 +19,7 @@ import org.log4s.getLogger
 
 package object arango {
 
-  import http.api._
+  import api._
   import http.resource._
 
   private val logger = getLogger

@@ -3,7 +3,8 @@
  */
 
 
-package io.freemonads.http
+package io.freemonads
+package http
 
 import cats.Id
 import org.specs2.Specification
