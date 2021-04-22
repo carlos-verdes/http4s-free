@@ -35,8 +35,12 @@ package object arango {
         collection.info()
             .handleErrorWith {
               case ArangoError.Response(ArangoResponse.Header(_, _, 404, _), _) =>
-                logger.info(s"""collection doesn't exist, creating new one""".stripMargin)
-                collection.create()
+                logger.info(s"""collection $collectionName doesn't exist, creating new one""".stripMargin)
+                collection.create().handleErrorWith {
+                  case ArangoError.Response(ArangoResponse.Header(_, _, 409, _), _) =>
+                    logger.info(s"2 threads creating same collection: $collectionName, ignoring error")
+                    collection.info()
+                }
             }
             .flatMap(_ => body(collection))
       })
@@ -52,6 +56,9 @@ package object arango {
         Path(resourceUri.path) match {
           case Root / collection =>
             withCollection(collection)(_.insert(document = document, returnNew = true))
+                .map(d => RestResource(uri"/" / collection / d.body._key.toString, d.body.`new`.get).resultOk)
+          case Root / collection / id =>
+            withCollection(collection)(_.document(DocumentKey(id)).replace(document = document, returnNew = true))
                 .map(d => RestResource(uri"/" / collection / d.body._key.toString, d.body.`new`.get).resultOk)
         }
 
@@ -69,9 +76,10 @@ package object arango {
   }
 
   def arangoErrorToApiResult[R, A](t: Throwable): IO[ApiResult[A]] = t match {
-    case ArangoError.Response(header, _) => (header.responseCode match {
-      case 400 => RequestFormatError(cause = Some(t))
-      case 404 => ResourceNotFoundError(Some(t))
-      case 409 => ConflictError(Some(t))
+    case ArangoError.Response(header, _) =>
+      (header.responseCode match {
+        case 400 => RequestFormatError(cause = Some(t))
+        case 404 => ResourceNotFoundError(Some(t))
+        case 409 => ConflictError(Some(t))
   }).resultError[A].pure[IO] }
 }

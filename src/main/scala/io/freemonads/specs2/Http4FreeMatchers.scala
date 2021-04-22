@@ -24,6 +24,9 @@ trait Http4FreeMatchers[F[_]] extends RunTimedMatchers[F] with Matchers {
 
   def resultErrorNotFound[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
     resultError[A, T, ResourceNotFoundError]
+
+  def resultErrorConflict[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
+    resultError[A, T, ConflictError]
 }
 
 trait Http4FreeIOMatchers extends Http4FreeMatchers[IO]
