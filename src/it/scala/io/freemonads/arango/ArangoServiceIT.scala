@@ -26,7 +26,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait MockServiceWithArango extends IOMatchers {
 
-  import http.api._
+  import api._
   import http.resource._
 
   implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]

@@ -1,27 +1,18 @@
 /*
- * Copyright 2021 io.freemonads
- *
- * SPDX-License-Identifier: MIT
+ * TODO: License goes here!
  */
 
-package io.freemonads.http
+
+package io.freemonads
 
 import cats.data.EitherT
 import cats.free.Free
 import cats.syntax.either._
 
-object api {
+package object api {
 
   type ApiResult[R] = Either[ApiError, R]
   type ApiFree[F[_], R] = EitherT[Free[F, *], ApiError, R]
-
-  sealed trait ApiError
-  case class RequestFormatError(message: Option[String] = None, cause: Option[Throwable] = None) extends ApiError
-  case class NonAuthorizedError(cause: Option[Throwable]) extends ApiError
-  case class ResourceNotFoundError(cause: Option[Throwable] = None) extends ApiError
-  case class NotImplementedError(method: String) extends ApiError
-  case class ConflictError(cause: Option[Throwable] = None) extends ApiError
-  case class RuntimeError(cause: Option[Throwable] = None) extends ApiError
 
   implicit class ApiOps[R](r: R) {
 
