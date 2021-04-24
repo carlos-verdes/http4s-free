@@ -42,3 +42,7 @@ prepare:
 .PHONY: startDocker
 startDocker:
 	docker-compose -f docker-compose.yml up -d
+
+.PHONY: header
+header:
+	sbt headerCreate
