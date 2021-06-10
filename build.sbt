@@ -36,6 +36,7 @@ lazy val root = (project in file("."))
       "org.specs2"       %% "specs2-core"                 % Specs2Version,
       "org.specs2"       %% "specs2-cats"                 % Specs2Version,
       "org.specs2"       %% "specs2-http4s"               % Http4sSpecs2Version % "it, test",
+      "com.whisk"        %% "docker-testkit-config"       % DockerTestVersion,
       "com.whisk"        %% "docker-testkit-specs2"       % DockerTestVersion % "it, test",
       "com.whisk"        %% "docker-testkit-impl-spotify" % DockerTestVersion % "it, test",
       "javax.activation" %  "activation"                  % "1.1.1" % "it",

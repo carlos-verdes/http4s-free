@@ -6,22 +6,18 @@
 package io.freemonads
 package http
 
-import cats.effect.IO
-import cats.~>
+import cats.{Id, ~>}
 import io.circe.generic.auto._
 import io.circe.{Decoder, Encoder}
-import org.http4s.Uri
 import org.http4s.implicits.http4sLiteralsSyntax
 import org.specs2.Specification
-import org.specs2.matcher.{IOMatchers, MatchResult}
+import org.specs2.matcher.MatchResult
 import org.specs2.specification.core.SpecStructure
 
-trait MockResources extends IOMatchers {
+trait MockResources {
 
   import api._
   import resource._
-  import rest._
-
 
   case class Mock(id: Option[String], name: String, age: Int)
 
@@ -34,37 +30,19 @@ trait MockResources extends IOMatchers {
   val newMockIdUri = uri"/mocks" / newMockId
   val newMock = Mock(Some(newMockId), "other name", 56)
 
-  implicit val interpreter: ResourceAlgebra ~> IO = new (ResourceAlgebra ~> IO) {
-    override def apply[A](op: ResourceAlgebra[A]): IO[A] = op match {
+  implicit val interpreter: ResourceAlgebra ~> Id = new (ResourceAlgebra ~> Id) {
+    override def apply[A](op: ResourceAlgebra[A]): Id[A] = op match {
 
-      case Store(_, r, _, _) =>
-        IO(RestResource(newMockIdUri, r).resultOk).asInstanceOf[IO[A]]
+      case Store(_, r, _, _) => RestResource(newMockIdUri, r).resultOk.asInstanceOf[Id[A]]
 
       case Fetch(resourceUri, _) =>
-        IO(
-          if (resourceUri == existingUri) RestResource(newMockIdUri, existingMock).resultOk
-          else ResourceNotFoundError().resultError[Mock]).asInstanceOf[IO[A]]
+        (if (resourceUri == existingUri) RestResource(newMockIdUri, existingMock).resultOk
+          else ResourceNotFoundError().resultError[Mock]).asInstanceOf[Id[A]]
     }
   }
-
-  def storeProgram[F[_]](
-      id: Uri,
-      mock: Mock)(
-      implicit dsl: ResourceDsl[F, Encoder, Decoder],
-      E: Encoder[Mock]): ApiFree[F, Mock] =
-    for {
-      mock <- dsl.store[Mock](id, mock)
-    } yield mock.body
-
-  def fetchProgram[F[_]](id: Uri)(implicit dsl: ResourceDsl[F, Encoder, Decoder], D: Decoder[Mock]): ApiFree[F, Mock] =
-    for {
-      mock <- dsl.fetch[Mock](id)
-    } yield mock.body
-
-  implicit val interpreters = http4sInterpreter[IO]
 }
 
-class ApiResource extends Specification with MockResources with specs2.Http4FreeIOMatchers { def is: SpecStructure =
+class ApiResourceSpec extends Specification with MockResources with specs2.Http4FreeIdMatchers { def is: SpecStructure =
 
   s2"""
       ApiResource should: <br/>
@@ -76,9 +54,9 @@ class ApiResource extends Specification with MockResources with specs2.Http4Free
   import resource.ResourceDsl._
   import resource._
 
-  implicit val dslInstance = instance[ResourceAlgebra, Encoder, Decoder]
+  implicit val dsl = instance[ResourceAlgebra, Encoder, Decoder]
 
-  def store: MatchResult[Any] = storeProgram(newMockIdUri, newMock) must resultOk(newMock)
-  def fetchFound: MatchResult[Any] = fetchProgram(existingUri) must resultOk(existingMock)
-  def fetchNotFound: MatchResult[Any] = fetchProgram(nonexistingUri) must resultErrorNotFound
+  def store: MatchResult[Any] = dsl.store[Mock](newMockIdUri, newMock).map(_.body) must resultOk(newMock)
+  def fetchFound: MatchResult[Any] = dsl.fetch[Mock](existingUri).map(_.body) must resultOk(existingMock)
+  def fetchNotFound: MatchResult[Any] = dsl.fetch[Mock](nonexistingUri).map(_.body) must resultErrorNotFound
 }

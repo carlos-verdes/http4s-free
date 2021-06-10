@@ -131,3 +131,81 @@ import io.freemonads._
 
 implicit val interpreters = http4sInterpreter[IO]
 ```
+
+
+## Testing
+
+### Test Http DSLs
+
+You can use `Http4FreeIOMatchers` or `Http4FreeIdMatchers` to test API dsls on `IO[_]` or `Id[_]`.
+
+Matchers:
+- `resultOk(expectedValue)` --> match a succesfull API call
+- `resultError[ErrorType]` --> match an specific error type when calling an API
+- `resultErrorNotFound`, `resultErrorConflict` --> instances of `resultError`
+
+Example:
+```scala
+
+class TestSpec extends Specification with specs2.Http4FreeIdMatchers { def is: SpecStructure =
+
+  s2"""
+      ApiResource should: <br/>
+      Store a resource                                $store
+      Fetch an existing resource                      $fetchFound
+      Return not found error for nonexistent resource $fetchNotFound
+      """
+      
+  implicit val interpreter: ResourceAlgebra ~> Id = ???
+  implicit val dsl = instance[ResourceAlgebra, Encoder, Decoder]
+
+  def store: MatchResult[Any] = dsl.store[Mock](newMockIdUri, newMock).map(_.body) must resultOk(newMock)
+  def fetchFound: MatchResult[Any] = dsl.fetch[Mock](existingUri).map(_.body) must resultOk(existingMock)
+  def fetchNotFound: MatchResult[Any] = dsl.fetch[Mock](nonexistingUri).map(_.body) must resultErrorNotFound
+```
+
+### IT Resource DSL with ArangoDB
+
+You can use `DockerKitConfigWithArango` as a Docker configuration kit with Arango for integration tests.
+
+Example with Specs2:
+```scala 
+
+class ArangoServiceIT(env: Env)
+    extends Specification
+        with DockerKitSpotify
+        with DockerKitConfigWithArango
+        with DockerTestKit
+```
+
+You can configure the Docker on your application.conf file:
+```HOCON
+
+# docker containers
+docker {
+
+  arango {
+    image-name = "arangodb/arangodb:3.7.10"
+    memory = 536870912 # 512MB
+    memory-reservation = 268435456 # 256MB
+    environmental-variables = ["ARANGO_ROOT_PASSWORD=rootpassword"]
+    ready-checker {
+      http-response-code {
+        port = 8529
+        path = "/"
+        within = 100
+        looped {
+          attempts = 20
+          delay = 1250
+        }
+      }
+    }
+    port-maps {
+      default-arango-port {
+        external = 18529
+        internal = 8529
+      }
+    }
+  }
+}
+```
