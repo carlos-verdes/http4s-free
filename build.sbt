@@ -1,3 +1,6 @@
+
+ThisBuild / sonatypeCredentialHost := "s01.oss.sonatype.org"
+
 val Http4sVersion = "0.21.16"
 val CatsVersion = "2.3.1"
 val CatsLogVersion = "1.2.0"
@@ -36,6 +39,7 @@ lazy val root = (project in file("."))
       "org.specs2"       %% "specs2-core"                 % Specs2Version,
       "org.specs2"       %% "specs2-cats"                 % Specs2Version,
       "org.specs2"       %% "specs2-http4s"               % Http4sSpecs2Version % "it, test",
+      "com.whisk"        %% "docker-testkit-config"       % DockerTestVersion,
       "com.whisk"        %% "docker-testkit-specs2"       % DockerTestVersion % "it, test",
       "com.whisk"        %% "docker-testkit-impl-spotify" % DockerTestVersion % "it, test",
       "javax.activation" %  "activation"                  % "1.1.1" % "it",
@@ -70,6 +74,8 @@ credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credentials")
 
 import xerial.sbt.Sonatype._
 sonatypeProjectHosting := Some(GitHubHosting("carlos-verdes", "http4s-free", "cverdes@gmail.com"))
+sonatypeCredentialHost := "s01.oss.sonatype.org"
+sonatypeRepository := "https://s01.oss.sonatype.org/service/local"
 
 // realease with sbt-release plugin
 import ReleaseTransformations._
