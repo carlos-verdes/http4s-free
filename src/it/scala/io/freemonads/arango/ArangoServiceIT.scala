@@ -14,6 +14,7 @@ import cats.effect.IO
 import cats.~>
 import com.whisk.docker.impl.spotify._
 import com.whisk.docker.specs2.DockerTestKit
+import io.freemonads.arango.test.DockerKitConfigWithArango
 import io.freemonads.specs2.Http4FreeIOMatchers
 import org.http4s._
 import org.http4s.implicits.http4sLiteralsSyntax
@@ -74,7 +75,7 @@ trait MockServiceWithArango extends IOMatchers {
 class ArangoServiceIT(env: Env)
     extends Specification
         with DockerKitSpotify
-        with DockerArangoDbService
+        with DockerKitConfigWithArango
         with DockerTestKit
         with MockServiceWithArango
         with Http4sMatchers[IO]
