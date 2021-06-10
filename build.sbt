@@ -1,3 +1,6 @@
+
+ThisBuild / sonatypeCredentialHost := "s01.oss.sonatype.org"
+
 val Http4sVersion = "0.21.16"
 val CatsVersion = "2.3.1"
 val CatsLogVersion = "1.2.0"
@@ -71,6 +74,8 @@ credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credentials")
 
 import xerial.sbt.Sonatype._
 sonatypeProjectHosting := Some(GitHubHosting("carlos-verdes", "http4s-free", "cverdes@gmail.com"))
+sonatypeCredentialHost := "s01.oss.sonatype.org"
+sonatypeRepository := "https://s01.oss.sonatype.org/service/local"
 
 // realease with sbt-release plugin
 import ReleaseTransformations._
