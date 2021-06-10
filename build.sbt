@@ -80,3 +80,4 @@ sonatypeRepository := "https://s01.oss.sonatype.org/service/local"
 // realease with sbt-release plugin
 import ReleaseTransformations._
 releaseCrossBuild := true
+releasePublishArtifactsAction := PgpKeys.publishSigned.value
