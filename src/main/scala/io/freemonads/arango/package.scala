@@ -7,6 +7,8 @@
 package io.freemonads
 
 import avokka.arangodb.ArangoCollection
+import avokka.arangodb.api.CollectionCreate
+import avokka.arangodb.api.CollectionCreate.KeyOptions
 import avokka.arangodb.fs2.Arango
 import avokka.arangodb.protocol.{ArangoError, ArangoResponse}
 import avokka.arangodb.types.{CollectionName, DocumentKey}
@@ -37,7 +39,8 @@ package object arango {
             .handleErrorWith {
               case ArangoError.Response(ArangoResponse.Header(_, _, 404, _), _) =>
                 logger.info(s"""collection $collectionName doesn't exist, creating new one""".stripMargin)
-                collection.create().handleErrorWith {
+                val colOptions = (c: CollectionCreate) => c.copy(keyOptions = Some(KeyOptions(allowUserKeys = Some(true))))
+                collection.create(colOptions).handleErrorWith {
                   case ArangoError.Response(ArangoResponse.Header(_, _, 409, _), _) =>
                     logger.info(s"2 threads creating same collection: $collectionName, ignoring error")
                     collection.info()
@@ -59,8 +62,17 @@ package object arango {
             withCollection(collection)(_.insert(document = document, returnNew = true))
                 .map(d => RestResource(uri"/" / collection / d.body._key.toString, d.body.`new`.get).resultOk)
           case Root / collection / id =>
-            withCollection(collection)(_.document(DocumentKey(id)).replace(document = document, returnNew = true))
-                .map(d => RestResource(uri"/" / collection / d.body._key.toString, d.body.`new`.get).resultOk)
+
+            val docWithKey = (serializer.encode(document) match {
+              case v: VObject => v.updated("_key", id)
+              case any => any
+            })
+
+            withCollection(collection)(_.insert(document = docWithKey, overwrite = true, returnNew = true))
+                .map(resp => deserializer.decode(resp.body.`new`.get) match {
+                  case Left(error) => arangoErrorToApiResult[RestResource[A]](error)
+                  case Right(value) => RestResource(uri"/" / collection / resp.body._key.toString, value).resultOk
+                })
         }
 
       case Fetch(resourceUri, deser) =>
@@ -73,14 +85,15 @@ package object arango {
             withCollection(collection)(_.document(DocumentKey(id)).read())
                 .map(d => RestResource(resourceUri, d.body).resultOk)
         }
-    }).handleErrorWith(arangoErrorToApiResult).map(_.asInstanceOf[A])
+    }).handleErrorWith(t => arangoErrorToApiResult(t).pure[IO]).map(_.asInstanceOf[A])
   }
 
-  def arangoErrorToApiResult[R, A](t: Throwable): IO[ApiResult[A]] = t match {
+  def arangoErrorToApiResult[A](t: Throwable): ApiResult[A] = t match {
     case ArangoError.Response(header, _) =>
       (header.responseCode match {
         case 400 => RequestFormatError(cause = Some(t))
         case 404 => ResourceNotFoundError(Some(t))
         case 409 => ConflictError(Some(t))
-  }).resultError[A].pure[IO] }
+      }).resultError[A]
+  }
 }
