@@ -18,7 +18,7 @@ package object api {
   implicit class ApiOps[R](r: R) {
 
     def resultOk: ApiResult[R] = r.asRight
-    def liftFree[F[_]]: ApiFree[F, R] = ApiResultOps(r.resultOk).liftFree[F]
+    def resultOkFree[F[_]]: ApiFree[F, R] = ApiResultOps(r.resultOk).liftFree[F]
   }
 
   implicit def errorToResultError[R](error: ApiError): ApiResult[R] = error.asLeft[R]
