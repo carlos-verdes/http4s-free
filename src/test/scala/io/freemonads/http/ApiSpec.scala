@@ -48,7 +48,7 @@ class ApiSpec extends Specification with ApiCalls with IOMatchers { def is: Spec
   def throwableOps: MatchResult[ApiResult[Int]] =
     someException.resultError[Int] must beAnInstanceOf[ApiResult[Int]]
 
-  def resultToCallFree: MatchResult[Any] = "resultOk".liftFree[Id] must beAnInstanceOf[ApiFree[Id, String]]
+  def resultToCallFree: MatchResult[Any] = "resultOk".resultOkFree[Id] must beAnInstanceOf[ApiFree[Id, String]]
 
   def noneToResultError: MatchResult[ApiResult[String]] =
     Option.empty[String].toResult(ResourceNotFoundError()) must beAnInstanceOf[ApiResult[String]]
