@@ -14,13 +14,13 @@ import cats.effect.IO
 import cats.~>
 import com.whisk.docker.impl.spotify._
 import com.whisk.docker.specs2.DockerTestKit
-import io.freemonads.arango.test.DockerKitConfigWithArango
+import io.freemonads.arango.docker.DockerArango
 import io.freemonads.http.resource.{ResourceDsl, RestResource}
 import io.freemonads.specs2.Http4FreeIOMatchers
 import org.http4s._
 import org.http4s.implicits.http4sLiteralsSyntax
 import org.specs2.Specification
-import org.specs2.matcher.{Http4sMatchers, IOMatchers, MatchResult}
+import org.specs2.matcher.{IOMatchers, MatchResult}
 import org.specs2.specification.core.{Env, SpecStructure}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -77,10 +77,9 @@ trait MockServiceWithArango extends IOMatchers {
 class ArangoServiceIT(env: Env)
     extends Specification
         with DockerKitSpotify
-        with DockerKitConfigWithArango
+        with DockerArango
         with DockerTestKit
         with MockServiceWithArango
-        with Http4sMatchers[IO]
         with Http4FreeIOMatchers {
 
   implicit val ee = env.executionEnv

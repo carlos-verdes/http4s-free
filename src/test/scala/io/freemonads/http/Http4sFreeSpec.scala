@@ -10,13 +10,14 @@ import cats.effect.{IO, Sync, Timer}
 import cats.{Functor, ~>}
 import io.circe.generic.auto._
 import io.circe.literal.JsonStringContext
+import io.freemonads.specs2.Http4FreeMatchers
 import org.http4s._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.headers.Location
 import org.http4s.implicits.{http4sKleisliResponseSyntaxOptionT, http4sLiteralsSyntax}
 import org.specs2.Specification
-import org.specs2.matcher.{Http4sMatchers, IOMatchers, MatchResult}
+import org.specs2.matcher.{IOMatchers, MatchResult}
 import org.specs2.specification.core.SpecStructure
 
 trait RestRoutes extends IOMatchers {
@@ -63,7 +64,7 @@ trait RestRoutes extends IOMatchers {
   val notFoundRequest: Request[IO] = Request[IO](Method.GET, uri"/wrongUri")
 }
 
-class HttpfsFreeSpec extends Specification with RestRoutes with Http4sMatchers[IO] with IOMatchers {
+class Http4sFreeSpec extends Specification with RestRoutes with Http4FreeMatchers[IO] with IOMatchers {
 
   def is: SpecStructure =
       s2"""

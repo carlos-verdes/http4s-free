@@ -18,7 +18,7 @@ import org.http4s.dsl.io._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.headers.Location
 import org.http4s.implicits._
-import org.http4s.server.blaze.BlazeServerBuilder
+import org.http4s.blaze.server.BlazeServerBuilder
 import org.typelevel.log4cats._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
