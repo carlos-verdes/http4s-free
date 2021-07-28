@@ -7,8 +7,8 @@
 package io.freemonads
 
 import avokka.arangodb.ArangoCollection
-import avokka.arangodb.api.CollectionCreate
-import avokka.arangodb.api.CollectionCreate.KeyOptions
+import avokka.arangodb.models.CollectionCreate
+import avokka.arangodb.models.CollectionCreate.KeyOptions
 import avokka.arangodb.fs2.Arango
 import avokka.arangodb.protocol.{ArangoError, ArangoResponse}
 import avokka.arangodb.types.{CollectionName, DocumentKey}
@@ -57,9 +57,9 @@ package object arango {
         implicit val deserializer: VPackDecoder[A] = deser.asInstanceOf[VPackDecoder[A]]
         val document: A = r.asInstanceOf[A]
 
-        Path(resourceUri.path) match {
+        resourceUri.path match {
           case Root / collection =>
-            withCollection(collection)(_.insert(document = document, returnNew = true))
+            withCollection(collection)(_.documents.insert(document = document, returnNew = true))
                 .map(d => RestResource(uri"/" / collection / d.body._key.toString, d.body.`new`.get).resultOk)
           case Root / collection / id =>
 
@@ -68,7 +68,7 @@ package object arango {
               case any => any
             })
 
-            withCollection(collection)(_.insert(document = docWithKey, overwrite = true, returnNew = true))
+            withCollection(collection)(_.documents.insert(document = docWithKey, overwrite = true, returnNew = true))
                 .map(resp => deserializer.decode(resp.body.`new`.get) match {
                   case Left(error) => arangoErrorToApiResult[RestResource[A]](error)
                   case Right(value) => RestResource(uri"/" / collection / resp.body._key.toString, value).resultOk
@@ -79,7 +79,7 @@ package object arango {
 
         implicit val deserializer: VPackDecoder[A] = deser.asInstanceOf[VPackDecoder[A]]
 
-        Path(resourceUri.path) match {
+        resourceUri.path match {
 
           case Root / collection / id =>
             withCollection(collection)(_.document(DocumentKey(id)).read())

@@ -39,7 +39,7 @@ object resource {
     def fetch[R](resourceUri: Uri)(implicit D: Deserializer[R]): ApiFree[Algebra, RestResource[R]] =
       EitherT(inject(Fetch(resourceUri, D)))
 
-    private def inject = Free.inject[ResourceAlgebra, Algebra]
+    private def inject = Free.liftInject[Algebra]
   }
 
   object ResourceDsl {

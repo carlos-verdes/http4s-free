@@ -24,15 +24,16 @@ object rest {
   private val logger = getLogger
 
   sealed trait Http4sAlgebra[Result]
-
   case class ParseRequest[F[_], R](request: Request[F], ED: EntityDecoder[F, R]) extends Http4sAlgebra[ApiResult[R]]
 
   class Http4sFreeDsl[Algebra[_]](implicit I: InjectK[Http4sAlgebra, Algebra]) {
 
-    def parseRequest[F[_], R](request: Request[F])(implicit ED: EntityDecoder[F, R]): ApiFree[Algebra, R] =
-      EitherT(inject(ParseRequest[F, R](request, ED)))
+    def parseRequest[F[_], R](request: Request[F])(implicit ED: EntityDecoder[F, R]): ApiFree[Algebra, R] = {
+      val parseRequest: Http4sAlgebra[ApiResult[R]] = ParseRequest(request, ED)
+      EitherT(inject(parseRequest))
+    }
 
-    private def inject[F[_], R] = Free.inject[Http4sAlgebra, F]
+    private def inject = Free.liftInject[Algebra]
   }
 
   object Http4sFreeDsl {
