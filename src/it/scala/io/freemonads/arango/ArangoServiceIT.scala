@@ -7,15 +7,13 @@ package arango
 
 import scala.concurrent.Future
 
-import avokka.arangodb.ArangoConfiguration
-import avokka.arangodb.fs2.Arango
 import avokka.velocypack.{VPackDecoder, VPackEncoder}
 import cats.effect.IO
 import cats.~>
 import com.whisk.docker.impl.spotify._
 import com.whisk.docker.specs2.DockerTestKit
 import io.freemonads.arango.docker.DockerArango
-import io.freemonads.http.resource.{ResourceDsl, RestResource}
+import io.freemonads.http.resource.{ResourceAlgebra, RestResource}
 import io.freemonads.specs2.Http4FreeIOMatchers
 import org.http4s._
 import org.http4s.implicits.http4sLiteralsSyntax
@@ -33,24 +31,19 @@ trait MockServiceWithArango extends IOMatchers {
 
   implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
 
-  type ArangoDsl = ResourceDsl[ResourceAlgebra, VPackEncoder, VPackDecoder]
-
   case class Mock(id: String, user: String, age: Int)
 
   implicit val mockEncoder: VPackEncoder[Mock] = VPackEncoder.gen
   implicit val mockDecoder: VPackDecoder[Mock] = VPackDecoder.gen
 
-  val arangoConfig = ArangoConfiguration.load()
-  val arangoResource = Arango(arangoConfig)
-
-  implicit val arangoInterpreter: ResourceAlgebra ~> IO = arangoResourceInterpreter(arangoResource)
+  implicit val arangoInterpreter: ResourceAlgebra ~> IO = arangoIoInterpreter
 
   val mock1 = Mock("aaa123", "Roger", 21)
   val updatedMock = Mock("456", "NewName", 36)
   val mocksUri = uri"/mocks"
   val mock1Uri = mocksUri / mock1.id
 
-  def storeAndFetch(uri: Uri, mock: Mock)(implicit dsl: ArangoDsl): ApiFree[ResourceAlgebra, Mock] = {
+  def storeAndFetch(uri: Uri, mock: Mock)(implicit dsl: ArangoDsl[ResourceAlgebra]): ApiFree[ResourceAlgebra, Mock] = {
 
     import dsl._
 
@@ -60,7 +53,11 @@ trait MockServiceWithArango extends IOMatchers {
     } yield fetchedResource.body
   }
 
-  def storeAndUpdate(uri: Uri, mock: Mock, newMock: Mock)(implicit dsl: ArangoDsl): ApiFree[ResourceAlgebra, Mock] = {
+  def storeAndUpdate(
+      uri: Uri,
+      mock: Mock,
+      newMock: Mock)(
+      implicit dsl: ArangoDsl[ResourceAlgebra]): ApiFree[ResourceAlgebra, Mock] = {
 
     import dsl._
 
@@ -70,7 +67,7 @@ trait MockServiceWithArango extends IOMatchers {
     } yield updatedResource.body
   }
 
-  def fetchFromArango(uri: Uri)(implicit dsl: ArangoDsl): ApiFree[ResourceAlgebra, Mock] =
+  def fetchFromArango(uri: Uri)(implicit dsl: ArangoDsl[ResourceAlgebra]): ApiFree[ResourceAlgebra, Mock] =
     dsl.fetch[Mock](uri).map(_.body)
 }
 
@@ -83,8 +80,7 @@ class ArangoServiceIT(env: Env)
         with Http4FreeIOMatchers {
 
   implicit val ee = env.executionEnv
-
-  implicit val dsl: ArangoDsl = ResourceDsl.instance
+  implicit val dsl = arangoDsl[ResourceAlgebra]
 
   def is: SpecStructure = s2"""
       The ArangoDB container should be ready                  $arangoIsReady
