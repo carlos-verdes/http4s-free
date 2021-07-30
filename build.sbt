@@ -19,8 +19,9 @@ val http4sLibraries = Seq(http4sdsl, http4sServer, http4sBlazeServer, http4sClie
 val catsLibraries = Seq(catsCore, catsFree)
 val circeLibraries = Seq(circeGeneric, circeLiteral)
 val avokkaLibraries = Seq(avokkaFs2, avokkaVelocipack)
+val secLibraries = Seq(tsecSig, tsecMac)
 
-val codeLibraries = http4sLibraries ++ catsLibraries ++ circeLibraries ++ avokkaLibraries
+val codeLibraries = http4sLibraries ++ catsLibraries ++ circeLibraries ++ avokkaLibraries ++ secLibraries
 
 val logLibraries = Seq(logback, logCatsSlf4j)
 val testLibraries = Seq(specs2Core, specs2Cats)

@@ -46,3 +46,10 @@ startDocker:
 .PHONY: header
 header:
 	sbt headerCreate
+
+.PHONY: testMockCreate
+testMockCreate:
+	curl -i --header "Content-Type: application/json" \
+		--request POST \
+		--data '{ "name": "Roger", "age": 21 }' \
+		http://localhost:8080/mocks
