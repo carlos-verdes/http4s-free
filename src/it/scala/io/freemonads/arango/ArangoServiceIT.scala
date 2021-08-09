@@ -11,19 +11,17 @@ import scala.concurrent.Future
 import avokka.velocypack.{VPackDecoder, VPackEncoder}
 import cats.data.{EitherK, Kleisli, OptionT}
 import cats.effect.IO
-import cats.~>
 import cats.syntax.option._
+import cats.syntax.semigroupk._
+import cats.~>
 import com.whisk.docker.impl.spotify._
 import com.whisk.docker.specs2.DockerTestKit
 import io.circe.generic.auto._
 import io.freemonads.arango.docker.DockerArango
-import io.freemonads.http.resource.{ResourceAlgebra, ResourceDsl, RestResource}
-import io.freemonads.http.rest
-//import io.freemonads.http.rest.{Http4sAlgebra, Http4sFreeDsl, http4sInterpreter}
 import io.freemonads.specs2.Http4FreeIOMatchers
 import org.http4s._
-import org.http4s.dsl.Http4sDsl
 import org.http4s.circe.CirceEntityCodec._
+import org.http4s.dsl.Http4sDsl
 import org.http4s.dsl.io._
 import org.http4s.headers.{Authorization, Location}
 import org.http4s.implicits.{http4sKleisliResponseSyntaxOptionT, http4sLiteralsSyntax}
@@ -37,7 +35,6 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 trait IOMatchersWithLogger extends IOMatchers {
 
   implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
-
 }
 
 trait MockServiceWithArango extends IOMatchersWithLogger {
@@ -89,18 +86,16 @@ trait MockServiceWithArango extends IOMatchersWithLogger {
 trait AuthCases extends IOMatchersWithLogger {
 
   import api._
-  import rest._
-
-  import tsec.common._
-  //  import tsec.jws.mac.JWTMac
+  import http.resource._
+  import http.rest._
+  import security._
+  import security.jwt._
   import tsec.jwt.JWTClaims
-  //  import tsec.mac.jca.HMACSHA256
 
-
-  implicit val interpreters = (http4sInterpreter[IO] or arangoIoInterpreter)
 
   case class UserRequest(address: String)
-  case class User(address: String, nonce: String)
+  case class User(address: String, nonce: String, username: Option[String])
+  case class UserUpdate(username: String)
 
   implicit val userEncoder: VPackEncoder[User] = VPackEncoder.gen
   implicit val userDecoder: VPackDecoder[User] = VPackDecoder.gen
@@ -108,19 +103,18 @@ trait AuthCases extends IOMatchersWithLogger {
 
   val userAddress = "address1"
   val userNonce = "nonce1"
+  val username = "rogerthat"
   val userRequest = UserRequest(userAddress)
-  val expectedUser = User(userAddress, userNonce)
+  val expectedCreatedUser = User(userAddress, userNonce, None)
+  val expectedUpdatedUser = User(userAddress, userNonce, username.some)
 
-  val testKey = "zK55VIsxuDZBfTSr5rK4t9U5TY2FZUiu+dW0nCWcegw=".b64Bytes.get
-  val claim = JWTClaims(subject = "1234567890".some, jwtId = None)
-  val expectedJwtToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.p96Ile3KTc_mp3i2J3dxqbvi16CJrT2-b448fZ8Hnz4"
-
+  val claim = JWTClaims(subject = "address1".some, jwtId = None)
+  val jwtToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9." +
+      "eyJzdWIiOiJhZGRyZXNzMSJ9." +
+      "hruJMUPgmxZwCYYqZJXB9l5x_shhGk5nYbvE_ryfECw"
 
   def userUri(user: User): Uri = userUri(user.address)
   def userUri(userAddress: String): Uri = uri"/users" / userAddress
-
-  type CombinedAlgebra[R] = EitherK[Http4sAlgebra, ResourceAlgebra, R]
-
 
   def retrieveUser[Algebra[_]](
       implicit resourceDsl: ArangoDsl[Algebra],
@@ -129,21 +123,31 @@ trait AuthCases extends IOMatchersWithLogger {
 
   val onFailure: AuthedRoutes[ApiError, IO] = Kleisli(req => OptionT.liftF(req.context))
 
-  def getUserFromHeader(request: Request[IO]): ApiResult[String] =
-    request
-        .headers
-        .get[Authorization]
-        .map(_.toString)
-        .toResult(NonAuthorizedError("Couldn't find an Authorization header".some))
+  def jwtTokenFromRequest(request: Request[IO]): ApiResult[String] =
+    request.headers.get[Authorization] match {
+      case Some(credentials) => credentials match {
+        case Authorization(Credentials.Token(_, jwtToken)) => jwtToken.resultOk
+        case _ => NonAuthorizedError("Invalid Authorization header".some).resultError[String]
+      }
+      case None => NonAuthorizedError("Couldn't find an Authorization header".some).resultError[String]
+    }
+
+
+  def log[Algebra[_]](text: String): ApiFree[Algebra, Unit] = println(text).resultOk.liftFree[Algebra]
 
   def authUser[Algebra[_]](
       implicit resourceDsl: ArangoDsl[Algebra],
+      securityDsl: SecurityDsl[Algebra],
       interpreters: Algebra ~> IO): Kleisli[IO, Request[IO], ApiResult[User]] =
+
     Kleisli({ request =>
       val message = for {
-        userAddress <- getUserFromHeader(request).liftFree[Algebra]
-        user <- resourceDsl.fetch[User](userUri(userAddress))
-
+        jwtToken <- jwtTokenFromRequest(request).liftFree[Algebra]
+        _ <- log(s"jwt token: $jwtToken")
+        claim <- securityDsl.validateToken(Token(jwtToken))
+        _ <- log(s"claim: $claim")
+        user <- resourceDsl.fetch[User](userUri(claim.subject.value))
+        _ <- log(s"user: $user")
       } yield user.body
 
       val result = message.value.foldMap(interpreters)
@@ -151,10 +155,11 @@ trait AuthCases extends IOMatchersWithLogger {
     })
 
   def authMiddleware[Algebra[_]](
-      implicit resourceDsl: ArangoDsl[Algebra],
+      implicit resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
+      securityDsl: SecurityDsl[Algebra],
       interpreters: Algebra ~> IO): AuthMiddleware[IO, User] = AuthMiddleware(authUser, onFailure)
 
-  def userRoutes[Algebra[_]](
+  def publicRoutes[Algebra[_]](
       implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
       resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
       interpreters: Algebra ~> IO): HttpRoutes[IO] = {
@@ -169,16 +174,59 @@ trait AuthCases extends IOMatchersWithLogger {
         for {
           userRequest <- parseRequest[IO, UserRequest](r)
           userAddress = userRequest.address
-          user = User(userAddress, userNonce)
+          user = User(userAddress, userNonce, None)
           storedUser <- store[User](userUri(user), user)
         } yield storedUser.created[IO]
     }
   }
 
-  val userService = userRoutes[CombinedAlgebra]
+  def privateRoutes[Algebra[_]](
+      implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
+      resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
+      interpreters: Algebra ~> IO): AuthedRoutes[User, IO] = {
 
+    val dsl = new Http4sDsl[IO]{}
+    import dsl._
+    import http4sFreeDsl._
+    import resourceDsl._
+
+    val wrongAddressError = NonAuthorizedError("wrong address".some).resultError
+
+    AuthedRoutes.of[User, IO] {
+      case r @ GET -> Root / "profile" as user =>
+        for {
+          _ <- log(s"request for profile: $r")
+          userFree <- user.resultOk.liftFree[Algebra]
+        } yield Ok(userFree)
+
+      case r @ PUT -> Root / "users" / address as user =>
+        for {
+          UserUpdate(newUsername) <- parseRequest[IO, UserUpdate](r.req)
+          _ <- (if (address == user.address) ().resultOk else wrongAddressError).liftFree[Algebra]
+          updatedUser <- store[User](r.req.uri, user.copy(username = newUsername.some))
+        } yield updatedUser.ok[IO]
+    }
+  }
+
+  type CombinedAlgebraA[R] = EitherK[ResourceAlgebra, SecurityAlgebra, R]
+  type CombinedAlgebra[R] = EitherK[Http4sAlgebra, CombinedAlgebraA, R]
+
+  implicit val securityDsl = security.SecurityDsl.instance[CombinedAlgebra]
+
+  implicit val interpreters: CombinedAlgebra ~> IO =
+    (http4sInterpreter[IO] or (arangoIoInterpreter or jwtSecurityInterpreter[IO]))
+
+  val authMiddlewareInstance = authMiddleware[CombinedAlgebra]
+
+  val userService = publicRoutes[CombinedAlgebra] <+> authMiddlewareInstance(privateRoutes[CombinedAlgebra])
+
+  val validAuthHeader = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, jwtToken)))
   val createUserRequest: Request[IO] = Request[IO](Method.POST, uri"/users").withEntity(userRequest)
-
+  val getProfileRequest: Request[IO] = Request[IO](Method.GET,uri"/profile").withHeaders(validAuthHeader)
+  val updateUserRequest: Request[IO] =
+    Request[IO](Method.PUT,uri"/users/address1")
+        .withEntity(UserUpdate(username))
+        .withHeaders(validAuthHeader)
 
   // Windows testing hack
   private def tsecWindowsFix(): Unit =
@@ -206,6 +254,8 @@ class ArangoServiceIT(env: Env)
         with AuthCases
         with Http4FreeIOMatchers {
 
+  import http.resource._
+
   implicit val ee = env.executionEnv
   implicit val dsl = arangoDsl[ResourceAlgebra]
 
@@ -215,7 +265,7 @@ class ArangoServiceIT(env: Env)
       Store and fetch from ArangoDB                           $storeAndFetch
       Store and update from ArangoDB                          $storeAndUpdate
       Return not found error when document doesn't exist      $returnNotFound
-      Store a resource usind HTTP APi                         $storeResource
+      Store a resource using HTTP API                         $storeResource
 
   """
 
@@ -230,10 +280,18 @@ class ArangoServiceIT(env: Env)
   def returnNotFound: MatchResult[Any] = fetchFromArango(uri"/emptyCollection/123") must resultErrorNotFound
 
   def storeResource: MatchResult[Any] =
-    userService.orNotFound(createUserRequest) must returnValue { (response: Response[IO]) =>
+    (userService.orNotFound(createUserRequest) must returnValue { (response: Response[IO]) =>
       response must haveStatus(Created) and
-          (response must haveBody(expectedUser)) and
-          (response must containHeader(Location(userUri(expectedUser))))
-    }
+          (response must haveBody(expectedCreatedUser)) and
+          (response must containHeader(Location(userUri(expectedCreatedUser))))
+    }) and (
+      userService.orNotFound(getProfileRequest) must returnValue { response: Response[IO] =>
+        response must haveStatus(Ok) and (response must haveBody(expectedCreatedUser))
+      }) and (
+        userService.orNotFound(updateUserRequest) must returnValue { response: Response[IO] =>
+          response must haveStatus(Ok) and (response must haveBody(expectedUpdatedUser))
+      })
+
+
 
 }

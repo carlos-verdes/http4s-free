@@ -19,7 +19,7 @@ val http4sLibraries = Seq(http4sdsl, http4sServer, http4sBlazeServer, http4sClie
 val catsLibraries = Seq(catsCore, catsFree)
 val circeLibraries = Seq(circeGeneric, circeLiteral)
 val avokkaLibraries = Seq(avokkaFs2, avokkaVelocipack)
-val secLibraries = Seq(tsecSig, tsecMac)
+val secLibraries = Seq(tsecSig, tsecMac, web3)
 
 val codeLibraries = http4sLibraries ++ catsLibraries ++ circeLibraries ++ avokkaLibraries ++ secLibraries
 

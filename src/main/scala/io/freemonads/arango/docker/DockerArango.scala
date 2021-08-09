@@ -1,6 +1,9 @@
 /*
- * TODO: License goes here!
+ * Copyright 2021 io.freemonads
+ *
+ * SPDX-License-Identifier: MIT
  */
+
 package io.freemonads.arango.docker
 
 import scala.concurrent.duration._
