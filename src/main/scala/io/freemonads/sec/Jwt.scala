@@ -3,7 +3,3 @@
  */
 package io.freemonads.sec
 
-object jwt {
-
-
-}
