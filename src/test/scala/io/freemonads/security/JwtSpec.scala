@@ -1,7 +1,7 @@
 /*
  * TODO: License goes here!
  */
-package io.freemonads.sec
+package io.freemonads.security
 
 
 import java.security.{NoSuchAlgorithmException, SecureRandom, Security}
@@ -19,8 +19,10 @@ import tsec.mac.jca.HMACSHA256
 trait JwtClaims {
 
   val testKey = "zK55VIsxuDZBfTSr5rK4t9U5TY2FZUiu+dW0nCWcegw=".b64Bytes.get
-  val claim = JWTClaims(subject = "1234567890".some, jwtId = None)
-  val expectedJwtToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.p96Ile3KTc_mp3i2J3dxqbvi16CJrT2-b448fZ8Hnz4"
+  val claim = JWTClaims(subject = "address1".some, jwtId = None)
+  val expectedJwtToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9." +
+      "eyJzdWIiOiJhZGRyZXNzMSJ9." +
+      "hruJMUPgmxZwCYYqZJXB9l5x_shhGk5nYbvE_ryfECw"
 
   // Windows testing hack
   private def tsecWindowsFix(): Unit =
@@ -44,7 +46,7 @@ trait JwtClaims {
       //jwt             <- JWTMac.build[F, HMACSHA256](claims, key) //You can sign and build a jwt object directly
       //verifiedFromObj <- JWTMac.verifyFromInstance[F, HMACSHA256](jwt, key) //Verify from an object directly
       stringjwt       <- JWTMac.buildToString[IO, HMACSHA256](claims, key) //Or build it straight to string
-      //isverified   <- JWTMac.verifyFromString[F, HMACSHA256](stringjwt, key) //You can verify straight from a string
+      //isverified   <- JWTMac.verifyFromString[IO, HMACSHA256](stringjwt, key) //You can verify straight from a string
       //parsed       <- JWTMac.verifyAndParse[F, HMACSHA256](stringjwt, key) //Or verify and return the actual instance
     } yield stringjwt
 }
