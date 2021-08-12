@@ -77,7 +77,9 @@ object rest {
       case RequestFormatError(details, cause) =>
         details.foreach(d => logger.error(s"Request format error: $d"))
         BadRequest(causeMessage(cause))
-      case NonAuthorizedError(cause) => Forbidden(cause.map(_.getLocalizedMessage).getOrElse(""))
+      case NonAuthorizedError(details, cause) =>
+        details.foreach(d => logger.error(s"Non authorized error: $d"))
+        Forbidden(cause.map(_.getLocalizedMessage).getOrElse(""))
       case ResourceNotFoundError(cause) => NotFound(causeMessage(cause))
       case ConflictError(cause) => Conflict(causeMessage(cause))
       case RuntimeError(cause) => InternalServerError(causeMessage(cause))

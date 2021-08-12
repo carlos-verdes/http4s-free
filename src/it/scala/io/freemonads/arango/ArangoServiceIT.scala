@@ -5,48 +5,47 @@
 package io.freemonads
 package arango
 
+import java.security.{NoSuchAlgorithmException, SecureRandom, Security}
 import scala.concurrent.Future
 
 import avokka.velocypack.{VPackDecoder, VPackEncoder}
-import cats.data.EitherK
-import cats.effect.{IO, Sync, Timer}
-import cats.{Functor, ~>}
+import cats.data.{EitherK, Kleisli, OptionT}
+import cats.effect.IO
+import cats.syntax.option._
+import cats.syntax.semigroupk._
+import cats.~>
 import com.whisk.docker.impl.spotify._
 import com.whisk.docker.specs2.DockerTestKit
 import io.circe.generic.auto._
 import io.freemonads.arango.docker.DockerArango
-import io.freemonads.http.resource.{ResourceAlgebra, RestResource}
-import io.freemonads.http.rest
 import io.freemonads.specs2.Http4FreeIOMatchers
 import org.http4s._
-import org.http4s.dsl.Http4sDsl
 import org.http4s.circe.CirceEntityCodec._
-import org.http4s.dsl.io.Created
-import org.http4s.headers.Location
+import org.http4s.dsl.Http4sDsl
+import org.http4s.dsl.io._
+import org.http4s.headers.{Authorization, Location}
 import org.http4s.implicits.{http4sKleisliResponseSyntaxOptionT, http4sLiteralsSyntax}
+import org.http4s.server.AuthMiddleware
 import org.specs2.Specification
 import org.specs2.matcher.{IOMatchers, MatchResult}
 import org.specs2.specification.core.{Env, SpecStructure}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+trait IOMatchersWithLogger extends IOMatchers {
 
-trait MockServiceWithArango extends IOMatchers {
+  implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
+}
+
+trait MockServiceWithArango extends IOMatchersWithLogger {
 
   import api._
   import http.resource._
-  import rest._
-
-  implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
 
   case class Mock(id: String, user: String, age: Int)
-  case class UserRequest(address: String)
-  case class User(address: String, nonce: String)
 
   implicit val mockEncoder: VPackEncoder[Mock] = VPackEncoder.gen
   implicit val mockDecoder: VPackDecoder[Mock] = VPackDecoder.gen
-  implicit val userEncoder: VPackEncoder[User] = VPackEncoder.gen
-  implicit val userDecoder: VPackDecoder[User] = VPackDecoder.gen
 
   implicit val arangoInterpreter: ResourceAlgebra ~> IO = arangoIoInterpreter
 
@@ -82,41 +81,168 @@ trait MockServiceWithArango extends IOMatchers {
   def fetchFromArango(uri: Uri)(implicit dsl: ArangoDsl[ResourceAlgebra]): ApiFree[ResourceAlgebra, Mock] =
     dsl.fetch[Mock](uri).map(_.body)
 
+}
+
+trait AuthCases extends IOMatchersWithLogger {
+
+  import api._
+  import http.resource._
+  import http.rest._
+  import security._
+  import security.jwt._
+  import tsec.jwt.JWTClaims
+
+
+  case class UserRequest(address: String)
+  case class User(address: String, nonce: String, username: Option[String])
+  case class UserUpdate(username: String)
+
+  implicit val userEncoder: VPackEncoder[User] = VPackEncoder.gen
+  implicit val userDecoder: VPackDecoder[User] = VPackDecoder.gen
+
 
   val userAddress = "address1"
   val userNonce = "nonce1"
+  val username = "rogerthat"
   val userRequest = UserRequest(userAddress)
-  val expectedUser = User(userAddress, userNonce)
+  val expectedCreatedUser = User(userAddress, userNonce, None)
+  val expectedUpdatedUser = User(userAddress, userNonce, username.some)
 
-  def userUri(user: User): Uri = uri"/users" / user.address
+  val claim = JWTClaims(subject = "address1".some, jwtId = None)
+  val jwtToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9." +
+      "eyJzdWIiOiJhZGRyZXNzMSJ9." +
+      "hruJMUPgmxZwCYYqZJXB9l5x_shhGk5nYbvE_ryfECw"
 
-  def userRoutes[F[_]: Sync : Timer : Functor, Algebra[_]](
+  def userUri(user: User): Uri = userUri(user.address)
+  def userUri(userAddress: String): Uri = uri"/users" / userAddress
+
+  def retrieveUser[Algebra[_]](
+      implicit resourceDsl: ArangoDsl[Algebra],
+      interpreters: Algebra ~> IO): Kleisli[IO, String, ApiResult[User]] =
+    Kleisli(id => resourceDsl.fetch[User](userUri(id)).map(_.body).value.foldMap(interpreters))
+
+  val onFailure: AuthedRoutes[ApiError, IO] = Kleisli(req => OptionT.liftF(req.context))
+
+  def jwtTokenFromRequest(request: Request[IO]): ApiResult[String] =
+    request.headers.get[Authorization] match {
+      case Some(credentials) => credentials match {
+        case Authorization(Credentials.Token(_, jwtToken)) => jwtToken.resultOk
+        case _ => NonAuthorizedError("Invalid Authorization header".some).resultError[String]
+      }
+      case None => NonAuthorizedError("Couldn't find an Authorization header".some).resultError[String]
+    }
+
+
+  def log[Algebra[_]](text: String): ApiFree[Algebra, Unit] = println(text).resultOk.liftFree[Algebra]
+
+  def authUser[Algebra[_]](
+      implicit resourceDsl: ArangoDsl[Algebra],
+      securityDsl: SecurityDsl[Algebra],
+      interpreters: Algebra ~> IO): Kleisli[IO, Request[IO], ApiResult[User]] =
+
+    Kleisli({ request =>
+      val message = for {
+        jwtToken <- jwtTokenFromRequest(request).liftFree[Algebra]
+        _ <- log(s"jwt token: $jwtToken")
+        claim <- securityDsl.validateToken(Token(jwtToken))
+        _ <- log(s"claim: $claim")
+        user <- resourceDsl.fetch[User](userUri(claim.subject.value))
+        _ <- log(s"user: $user")
+      } yield user.body
+
+      val result = message.value.foldMap(interpreters)
+      result
+    })
+
+  def authMiddleware[Algebra[_]](
+      implicit resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
+      securityDsl: SecurityDsl[Algebra],
+      interpreters: Algebra ~> IO): AuthMiddleware[IO, User] = AuthMiddleware(authUser, onFailure)
+
+  def publicRoutes[Algebra[_]](
       implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
       resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
-      interpreters: Algebra ~> F): HttpRoutes[F] = {
+      interpreters: Algebra ~> IO): HttpRoutes[IO] = {
 
-    val dsl = new Http4sDsl[F]{}
+    val dsl = new Http4sDsl[IO]{}
     import dsl._
     import http4sFreeDsl._
     import resourceDsl._
 
-    HttpRoutes.of[F] {
+    HttpRoutes.of[IO] {
       case r @ POST -> Root / "users" =>
         for {
-          userRequest <- parseRequest[F, UserRequest](r)
+          userRequest <- parseRequest[IO, UserRequest](r)
           userAddress = userRequest.address
-          user = User(userAddress, userNonce)
+          user = User(userAddress, userNonce, None)
           storedUser <- store[User](userUri(user), user)
-        } yield storedUser.created[F]
+        } yield storedUser.created[IO]
     }
   }
 
-  implicit val interpreters = (http4sInterpreter[IO] or arangoIoInterpreter)
-  type CombinedAlgebra[R] = EitherK[Http4sAlgebra, ResourceAlgebra, R]
+  def privateRoutes[Algebra[_]](
+      implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
+      resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
+      interpreters: Algebra ~> IO): AuthedRoutes[User, IO] = {
 
-  val userService = userRoutes[IO, CombinedAlgebra]
+    val dsl = new Http4sDsl[IO]{}
+    import dsl._
+    import http4sFreeDsl._
+    import resourceDsl._
 
+    val wrongAddressError = NonAuthorizedError("wrong address".some).resultError
+
+    AuthedRoutes.of[User, IO] {
+      case r @ GET -> Root / "profile" as user =>
+        for {
+          _ <- log(s"request for profile: $r")
+          userFree <- user.resultOk.liftFree[Algebra]
+        } yield Ok(userFree)
+
+      case r @ PUT -> Root / "users" / address as user =>
+        for {
+          UserUpdate(newUsername) <- parseRequest[IO, UserUpdate](r.req)
+          _ <- (if (address == user.address) ().resultOk else wrongAddressError).liftFree[Algebra]
+          updatedUser <- store[User](r.req.uri, user.copy(username = newUsername.some))
+        } yield updatedUser.ok[IO]
+    }
+  }
+
+  type CombinedAlgebraA[R] = EitherK[ResourceAlgebra, SecurityAlgebra, R]
+  type CombinedAlgebra[R] = EitherK[Http4sAlgebra, CombinedAlgebraA, R]
+
+  implicit val securityDsl = security.SecurityDsl.instance[CombinedAlgebra]
+
+  implicit val interpreters: CombinedAlgebra ~> IO =
+    (http4sInterpreter[IO] or (arangoIoInterpreter or jwtSecurityInterpreter[IO]))
+
+  val authMiddlewareInstance = authMiddleware[CombinedAlgebra]
+
+  val userService = publicRoutes[CombinedAlgebra] <+> authMiddlewareInstance(privateRoutes[CombinedAlgebra])
+
+  val validAuthHeader = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, jwtToken)))
   val createUserRequest: Request[IO] = Request[IO](Method.POST, uri"/users").withEntity(userRequest)
+  val getProfileRequest: Request[IO] = Request[IO](Method.GET,uri"/profile").withHeaders(validAuthHeader)
+  val updateUserRequest: Request[IO] =
+    Request[IO](Method.PUT,uri"/users/address1")
+        .withEntity(UserUpdate(username))
+        .withHeaders(validAuthHeader)
+
+  // Windows testing hack
+  private def tsecWindowsFix(): Unit =
+    try {
+      SecureRandom.getInstance("NativePRNGNonBlocking")
+      ()
+    } catch {
+      case _: NoSuchAlgorithmException =>
+        val secureRandom = new SecureRandom()
+        val defaultSecureRandomProvider = secureRandom.getProvider.get(s"SecureRandom.${secureRandom.getAlgorithm}")
+        secureRandom.getProvider.put("SecureRandom.NativePRNGNonBlocking", defaultSecureRandomProvider)
+        Security.addProvider(secureRandom.getProvider)
+        ()
+    }
+
+  tsecWindowsFix()
 }
 
 class ArangoServiceIT(env: Env)
@@ -125,7 +251,10 @@ class ArangoServiceIT(env: Env)
         with DockerArango
         with DockerTestKit
         with MockServiceWithArango
+        with AuthCases
         with Http4FreeIOMatchers {
+
+  import http.resource._
 
   implicit val ee = env.executionEnv
   implicit val dsl = arangoDsl[ResourceAlgebra]
@@ -136,7 +265,7 @@ class ArangoServiceIT(env: Env)
       Store and fetch from ArangoDB                           $storeAndFetch
       Store and update from ArangoDB                          $storeAndUpdate
       Return not found error when document doesn't exist      $returnNotFound
-      Store a resource usind HTTP APi                         $storeResource
+      Store a resource using HTTP API                         $storeResource
 
   """
 
@@ -151,10 +280,18 @@ class ArangoServiceIT(env: Env)
   def returnNotFound: MatchResult[Any] = fetchFromArango(uri"/emptyCollection/123") must resultErrorNotFound
 
   def storeResource: MatchResult[Any] =
-    userService.orNotFound(createUserRequest) must returnValue { (response: Response[IO]) =>
+    (userService.orNotFound(createUserRequest) must returnValue { (response: Response[IO]) =>
       response must haveStatus(Created) and
-          (response must haveBody(expectedUser)) and
-          (response must containHeader(Location(userUri(expectedUser))))
-    }
+          (response must haveBody(expectedCreatedUser)) and
+          (response must containHeader(Location(userUri(expectedCreatedUser))))
+    }) and (
+      userService.orNotFound(getProfileRequest) must returnValue { response: Response[IO] =>
+        response must haveStatus(Ok) and (response must haveBody(expectedCreatedUser))
+      }) and (
+        userService.orNotFound(updateUserRequest) must returnValue { response: Response[IO] =>
+          response must haveStatus(Ok) and (response must haveBody(expectedUpdatedUser))
+      })
+
+
 
 }

@@ -10,6 +10,7 @@ object Dependencies {
     val circeV = "0.14.0-M7" //https://github.com/circe/circe/releases
     val avokkaV = "0.0.7"
     val tsecV = "0.3.0-M1"
+    val web3jVersion = "5.0.0"
     val logCatsSlf4jV = "1.3.1"
     val logBackV = "1.2.3"
     val specs2V = "4.9.3"
@@ -35,6 +36,7 @@ object Dependencies {
     val avokkaFs2          = "com.bicou"          %% "avokka-arangodb-fs2"         % Versions.avokkaV
     val tsecMac            = "io.github.jmcardon" %% "tsec-jwt-mac"                % Versions.tsecV
     val tsecSig            = "io.github.jmcardon" %% "tsec-jwt-sig"                % Versions.tsecV
+    val web3               = "org.web3j"          %  "core"                        % Versions.web3jVersion
 
     val logback            = "ch.qos.logback"   %  "logback-classic"             % Versions.logBackV
     val logCatsSlf4j       = "org.typelevel"    %% "log4cats-slf4j"              % Versions.logCatsSlf4jV
