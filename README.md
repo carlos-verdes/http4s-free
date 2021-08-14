@@ -36,13 +36,13 @@ def mockRoutes[F[_] : Sync : Timer : Functor, Algebra[_], Serializer[_], Deseria
     case r @ GET -> Root / "mock" / id =>
       for {
         mock <- fetch[Mock](r.uri) //
-      } yield Ok(mock)
+      } yield mock.ok[F]
 
     case r @ POST -> Root / "mock" =>
       for {
         mockRequest <- parseRequest[F, Mock](r)
         savedResource <- store[Mock](r.uri, mockRequest)
-      } yield Created(savedResource)
+      } yield savedResource.created[F]
   }
 }
 ```

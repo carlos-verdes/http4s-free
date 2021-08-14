@@ -37,7 +37,7 @@ package object api {
     def resultError[R]: ApiResult[R] = errorFromThrowable(t)
   }
 
-  implicit class ApiResultOps[R](result: ApiResult[R]){
+  implicit class ApiResultOps[R](result: ApiResult[R]) {
 
     def liftFree[F[_]]: ApiFree[F, R] = EitherT[Free[F, *], ApiError, R](Free.pure(result))
   }

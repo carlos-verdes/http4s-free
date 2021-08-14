@@ -7,10 +7,12 @@
 package io.freemonads
 package http
 
-import cats.InjectK
 import cats.data.EitherT
 import cats.free.Free
-import org.http4s.Uri
+import cats.{Applicative, InjectK}
+import org.http4s.dsl.Http4sDsl
+import org.http4s.headers.{Link, LinkValue, Location}
+import org.http4s.{EntityEncoder, Response, Uri}
 
 
 object resource {
@@ -18,6 +20,27 @@ object resource {
   import api._
 
   case class RestResource[R](uri: Uri, body: R)
+
+  val REL_SELF = "self"
+
+  implicit class RestResourceOps[R](rr: RestResource[R]) {
+
+    def ok[F[_]: Applicative](implicit EE: EntityEncoder[F, R]): F[Response[F]] = {
+
+      val dsl = new Http4sDsl[F]{}
+      import dsl._
+
+      Ok(rr.body, Link(LinkValue(rr.uri, rel = Some(REL_SELF))))
+    }
+
+    def created[F[_]: Applicative](implicit EE: EntityEncoder[F, R]): F[Response[F]] = {
+
+      val dsl = new Http4sDsl[F]{}
+      import dsl._
+
+      Created(rr.body, Location(rr.uri))
+    }
+  }
 
   sealed trait ResourceAlgebra[Result]
 
@@ -39,7 +62,7 @@ object resource {
     def fetch[R](resourceUri: Uri)(implicit D: Deserializer[R]): ApiFree[Algebra, RestResource[R]] =
       EitherT(inject(Fetch(resourceUri, D)))
 
-    private def inject = Free.inject[ResourceAlgebra, Algebra]
+    private def inject = Free.liftInject[Algebra]
   }
 
   object ResourceDsl {

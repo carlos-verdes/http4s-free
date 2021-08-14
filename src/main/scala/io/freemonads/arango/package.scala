@@ -6,19 +6,20 @@
 
 package io.freemonads
 
-import avokka.arangodb.ArangoCollection
-import avokka.arangodb.api.CollectionCreate
-import avokka.arangodb.api.CollectionCreate.KeyOptions
+import avokka.arangodb.{ArangoCollection, ArangoConfiguration}
+import avokka.arangodb.models.CollectionCreate
+import avokka.arangodb.models.CollectionCreate.KeyOptions
 import avokka.arangodb.fs2.Arango
 import avokka.arangodb.protocol.{ArangoError, ArangoResponse}
 import avokka.arangodb.types.{CollectionName, DocumentKey}
 import avokka.velocypack._
-import cats.effect.{IO, Resource}
+import cats.effect.{ContextShift, IO, Resource, Timer}
 import cats.implicits.catsSyntaxApplicativeId
-import cats.~>
+import cats.{InjectK, ~>}
 import org.http4s.dsl.io._
 import org.http4s.implicits.http4sLiteralsSyntax
 import org.log4s.getLogger
+import org.typelevel.log4cats.Logger
 
 package object arango {
 
@@ -26,6 +27,8 @@ package object arango {
   import http.resource._
 
   private val logger = getLogger
+
+  type ArangoDsl[Algebra[_]] = ResourceDsl[Algebra, VPackEncoder, VPackDecoder]
 
   // scalastyle:off
   def arangoResourceInterpreter(clientR: Resource[IO, Arango[IO]]): ResourceAlgebra ~> IO = new (ResourceAlgebra ~> IO) {
@@ -57,9 +60,9 @@ package object arango {
         implicit val deserializer: VPackDecoder[A] = deser.asInstanceOf[VPackDecoder[A]]
         val document: A = r.asInstanceOf[A]
 
-        Path(resourceUri.path) match {
+        resourceUri.path match {
           case Root / collection =>
-            withCollection(collection)(_.insert(document = document, returnNew = true))
+            withCollection(collection)(_.documents.insert(document = document, returnNew = true))
                 .map(d => RestResource(uri"/" / collection / d.body._key.toString, d.body.`new`.get).resultOk)
           case Root / collection / id =>
 
@@ -68,7 +71,7 @@ package object arango {
               case any => any
             })
 
-            withCollection(collection)(_.insert(document = docWithKey, overwrite = true, returnNew = true))
+            withCollection(collection)(_.documents.insert(document = docWithKey, overwrite = true, returnNew = true))
                 .map(resp => deserializer.decode(resp.body.`new`.get) match {
                   case Left(error) => arangoErrorToApiResult[RestResource[A]](error)
                   case Right(value) => RestResource(uri"/" / collection / resp.body._key.toString, value).resultOk
@@ -79,7 +82,7 @@ package object arango {
 
         implicit val deserializer: VPackDecoder[A] = deser.asInstanceOf[VPackDecoder[A]]
 
-        Path(resourceUri.path) match {
+        resourceUri.path match {
 
           case Root / collection / id =>
             withCollection(collection)(_.document(DocumentKey(id)).read())
@@ -95,5 +98,18 @@ package object arango {
         case 404 => ResourceNotFoundError(Some(t))
         case 409 => ConflictError(Some(t))
       }).resultError[A]
+  }
+
+  implicit def arangoDsl[F[_]](implicit I: InjectK[ResourceAlgebra, F]): ArangoDsl[F] = ResourceDsl.instance
+
+  def arangoIoInterpreter(
+      implicit CS: ContextShift[IO],
+      T: Timer[IO],
+      L: Logger[IO]): ResourceAlgebra ~> IO = {
+
+    val arangoConfig = ArangoConfiguration.load()
+    val arangoResource = Arango(arangoConfig)
+
+    arangoResourceInterpreter(arangoResource)
   }
 }
