@@ -58,6 +58,9 @@ trait Http4FreeMatchers[F[_]] extends RunTimedMatchers[F] with Matchers {
 
   def resultFormatError[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
     resultError[A, T, RequestFormatError]
+
+  def resultNonAuthorizedError[A[_], T](implicit intr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
+    resultError[A, T, NonAuthorizedError]
 }
 
 trait Http4FreeIOMatchers extends Http4FreeMatchers[IO]
