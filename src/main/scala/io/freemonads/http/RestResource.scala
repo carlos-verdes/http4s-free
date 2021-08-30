@@ -54,6 +54,8 @@ object resource {
       resourceUri: Uri,
       deserializer: Des[R]) extends ResourceAlgebra[ApiResult[RestResource[R]]]
 
+  case class LinkResources(leftUri: Uri, rightUri: Uri, relType: String) extends ResourceAlgebra[ApiResult[Unit]]
+
   class ResourceDsl[Algebra[_], Serializer[R], Deserializer[R]](implicit I: InjectK[ResourceAlgebra, Algebra]) {
 
     def store[R](uri: Uri, r: R)(implicit S: Serializer[R], D: Deserializer[R]): ApiFree[Algebra, RestResource[R]] =
@@ -61,6 +63,12 @@ object resource {
 
     def fetch[R](resourceUri: Uri)(implicit D: Deserializer[R]): ApiFree[Algebra, RestResource[R]] =
       EitherT(inject(Fetch(resourceUri, D)))
+
+    def link(left: RestResource[Any], right: RestResource[Any], relType: String): ApiFree[Algebra, Unit] =
+      link(left.uri, right.uri, relType)
+
+    def link(leftUri: Uri, rightUri: Uri, relType: String): ApiFree[Algebra, Unit] =
+      EitherT(inject(LinkResources(leftUri, rightUri, relType)))
 
     private def inject = Free.liftInject[Algebra]
   }
