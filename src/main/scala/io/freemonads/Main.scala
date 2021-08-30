@@ -54,8 +54,13 @@ object Main extends IOApp {
       case r @ POST -> Root / "mocks" =>
         for {
           mockRequest <- parseRequest[IO, Mock](r)
-          savedMock <- store[Mock](r.uri, mockRequest)
+          savedMock <- store[Mock](r.uri / mockRequest.name.toLowerCase, mockRequest)
         } yield Created(savedMock.body, Location(savedMock.uri))
+
+      case POST -> Root / "mocks" / leftId / relType / rightId =>
+        for {
+          _ <- link(uri"/" / "mocks" / leftId, uri"/" / "mocks" / rightId, relType)
+        } yield Ok()
     }
   }
 

@@ -7,6 +7,7 @@ package io.freemonads
 package http
 
 import cats.effect.IO
+import cats.implicits.catsSyntaxApplicativeId
 import cats.{Applicative, ~>}
 import io.circe.generic.auto._
 import io.circe.{Decoder, Encoder}
@@ -42,6 +43,8 @@ trait MockResources {
       case Fetch(resourceUri, _) =>
         A.pure((if (resourceUri == existingUri) RestResource(newMockIdUri, existingMock).resultOk
           else ResourceNotFoundError().resultError[Mock]).asInstanceOf[A])
+
+      case LinkResources(_, _, _) => ().asInstanceOf[A].pure[F]
     }
   }
 
