@@ -6,12 +6,12 @@
 
 package io.freemonads
 
-import avokka.arangodb.{ArangoCollection, ArangoConfiguration}
-import avokka.arangodb.models.CollectionCreate
-import avokka.arangodb.models.CollectionCreate.KeyOptions
 import avokka.arangodb.fs2.Arango
+import avokka.arangodb.models.CollectionCreate.KeyOptions
+import avokka.arangodb.models.{CollectionCreate, CollectionType}
 import avokka.arangodb.protocol.{ArangoError, ArangoResponse}
 import avokka.arangodb.types.{CollectionName, DocumentKey}
+import avokka.arangodb.{ArangoCollection, ArangoConfiguration}
 import avokka.velocypack._
 import cats.effect.{ContextShift, IO, Resource, Timer}
 import cats.implicits.catsSyntaxApplicativeId
@@ -33,7 +33,12 @@ package object arango {
   // scalastyle:off
   def arangoResourceInterpreter(clientR: Resource[IO, Arango[IO]]): ResourceAlgebra ~> IO = new (ResourceAlgebra ~> IO) {
 
-    def withCollection[A](collectionName: String)(body: ArangoCollection[IO] => IO[A]): IO[A] = {
+    def withEdge[A](collectionName: String)(body: ArangoCollection[IO] => IO[A]): IO[A] =
+      withCollection(collectionName, CollectionType.Edge)(body)
+
+    def withCollection[A](
+        collectionName: String,
+        collectionType: CollectionType = CollectionType.Document)(body: ArangoCollection[IO] => IO[A]): IO[A] = {
       clientR.use(client => {
 
         val collection = client.db.collection(CollectionName(collectionName))
@@ -42,7 +47,10 @@ package object arango {
             .handleErrorWith {
               case ArangoError.Response(ArangoResponse.Header(_, _, 404, _), _) =>
                 logger.info(s"""collection $collectionName doesn't exist, creating new one""".stripMargin)
-                val colOptions = (c: CollectionCreate) => c.copy(keyOptions = Some(KeyOptions(allowUserKeys = Some(true))))
+                val colOptions = (c: CollectionCreate) =>
+                  c.copy(
+                    keyOptions = Some(KeyOptions(allowUserKeys = Some(true))),
+                    `type` = collectionType)
                 collection.create(colOptions).handleErrorWith {
                   case ArangoError.Response(ArangoResponse.Header(_, _, 409, _), _) =>
                     logger.info(s"2 threads creating same collection: $collectionName, ignoring error")
@@ -88,6 +96,23 @@ package object arango {
             withCollection(collection)(_.document(DocumentKey(id)).read())
                 .map(d => RestResource(resourceUri, d.body).resultOk)
         }
+
+      case LinkResources(leftUri, rightUri, relType) =>
+
+        val leftId = leftUri.path.toString().substring(1)
+        val rightId = rightUri.path.toString().substring(1)
+        val edgeKey = leftId.substring(leftId.lastIndexOf("/") + 1) + "-" + rightId.substring(rightId.lastIndexOf("/") + 1)
+
+        val edgeDocument: VObject =
+          VObject
+              .empty
+              .updated("_key", edgeKey)
+              .updated("_from", leftId)
+              .updated("_to", rightId)
+
+        withEdge(relType)(_.documents.insert(document = edgeDocument, overwrite = true)).map(_ => ().resultOk)
+
+
     }).handleErrorWith(t => arangoErrorToApiResult(t).pure[IO]).map(_.asInstanceOf[A])
   }
 
