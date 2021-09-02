@@ -15,6 +15,7 @@ object Dependencies {
     val logBackV = "1.2.3"
     val specs2V = "4.9.3"
     val dockerTestV = "0.9.9"
+    val jansiVersion = "1.8"
   }
 
   object Libraries {
@@ -38,8 +39,9 @@ object Dependencies {
     val tsecSig            = "io.github.jmcardon" %% "tsec-jwt-sig"                % Versions.tsecV
     val web3               = "org.web3j"          %  "core"                        % Versions.web3jVersion
 
-    val logback            = "ch.qos.logback"   %  "logback-classic"             % Versions.logBackV
-    val logCatsSlf4j       = "org.typelevel"    %% "log4cats-slf4j"              % Versions.logCatsSlf4jV
+    val logback            = "ch.qos.logback"       %  "logback-classic"         % Versions.logBackV
+    val logCatsSlf4j       = "org.typelevel"        %% "log4cats-slf4j"          % Versions.logCatsSlf4jV
+    val jansi              = "org.fusesource.jansi" % "jansi"                    % Versions.jansiVersion
 
     val specs2Core         = "org.specs2"       %% "specs2-core"                 % Versions.specs2V
     val specs2Cats         = "org.specs2"       %% "specs2-cats"                 % Versions.specs2V

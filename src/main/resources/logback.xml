@@ -12,6 +12,7 @@
     </encoder>
   </appender>
   <logger name="avokka.arangodb" level="DEBUG" />
+  <logger name="avokka.velocypack" level="DEBUG" />
   <root level="INFO">
     <appender-ref ref="STDOUT" />
   </root>

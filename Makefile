@@ -56,9 +56,9 @@ testMockCreate:
 	curl -i --header "Content-Type: application/json" \
 		--request POST \
 		--data '{ "name": "Roger", "age": 21 }' \
-		http://localhost:8080/mocks && \
+		http://192.168.0.130:8080/mocks && \
 		curl -i --header "Content-Type: application/json" \
 		--request POST \
 		--data '{ "name": "That", "age": 21 }' \
-		http://localhost:8080/mocks && \
-		curl -i --request POST http://localhost:8080/mocks/roger/brother/that
+		http://192.168.0.130:8080/mocks && \
+		curl -i --request POST http://192.168.0.130:8080/mocks/roger/brother/that
