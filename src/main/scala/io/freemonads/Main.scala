@@ -14,11 +14,11 @@ import cats.effect.{ExitCode, IO, IOApp}
 import cats.~>
 import io.circe.generic.auto._
 import org.http4s.HttpRoutes
-import org.http4s.dsl.io._
+import org.http4s.blaze.server.BlazeServerBuilder
 import org.http4s.circe.CirceEntityCodec._
+import org.http4s.dsl.io._
 import org.http4s.headers.Location
 import org.http4s.implicits._
-import org.http4s.blaze.server.BlazeServerBuilder
 import org.typelevel.log4cats._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -27,9 +27,9 @@ case class Mock(name: String, age: Int)
 
 object Main extends IOApp {
 
-  import io.freemonads.arango._
   import http.resource._
   import http.rest._
+  import io.freemonads.arango._
 
   type TestAlgebra[R] = EitherK[Http4sAlgebra,  ResourceAlgebra, R]
   type ArangoResourceDsl = ResourceDsl[TestAlgebra, VPackEncoder, VPackDecoder]

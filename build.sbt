@@ -23,7 +23,7 @@ val secLibraries = Seq(tsecSig, tsecMac, web3)
 
 val codeLibraries = http4sLibraries ++ catsLibraries ++ circeLibraries ++ avokkaLibraries ++ secLibraries
 
-val logLibraries = Seq(logback, logCatsSlf4j)
+val logLibraries = Seq(logback, logCatsSlf4j, jansi)
 val testLibraries = Seq(specs2Core, specs2Cats)
 
 val dockerLibraries = Seq(dockerTestConfig, dockerTestSpecs2, dockerTestSpotify)

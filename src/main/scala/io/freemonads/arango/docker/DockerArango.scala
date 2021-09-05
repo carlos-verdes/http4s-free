@@ -31,7 +31,7 @@ trait DockerArango extends DockerKit {
 
 object DockerArango {
 
-  val DOCKER_IMAGE = "arangodb/arangodb:3.7.10"
+  val DOCKER_IMAGE = "avokka/arangodb/arangodb:3.7.10"
   val DOCKER_ENV = "ARANGO_ROOT_PASSWORD=rootpassword"
   val HOST = "0.0.0.0"
   val TIMEOUT = 100.millis

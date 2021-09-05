@@ -9,7 +9,7 @@ package io.freemonads
 import avokka.arangodb.fs2.Arango
 import avokka.arangodb.models.CollectionCreate.KeyOptions
 import avokka.arangodb.models.{CollectionCreate, CollectionType}
-import avokka.arangodb.protocol.{ArangoError, ArangoResponse}
+import avokka.arangodb.protocol.{ArangoClient, ArangoError, ArangoResponse}
 import avokka.arangodb.types.{CollectionName, DocumentKey}
 import avokka.arangodb.{ArangoCollection, ArangoConfiguration}
 import avokka.velocypack._
@@ -99,16 +99,33 @@ package object arango {
 
       case LinkResources(leftUri, rightUri, relType) =>
 
-        val leftId = leftUri.path.toString().substring(1)
-        val rightId = rightUri.path.toString().substring(1)
-        val edgeKey = leftId.substring(leftId.lastIndexOf("/") + 1) + "-" + rightId.substring(rightId.lastIndexOf("/") + 1)
+        import avokka.arangodb.ArangoGraph._
+
+        val leftPath = leftUri.path.toString().substring(1)
+        val rightPath = rightUri.path.toString().substring(1)
+
+        val Array(leftCol, leftId) = leftPath.split("/")
+        val Array(_, rightId) = rightPath.split("/")
+        val edgeKey = leftId + "-" + rightId
+
+
+        clientR.use(client => {
+          implicit val _client: ArangoClient[IO] = client
+
+          println(s"Testing graph info for collection $leftCol...")
+          val info = (new ArangoDatabaseGrapOps(client.db)).graph(leftCol).info().unsafeRunSync()
+          println(s"Graph into: $info")
+
+          ().pure[IO]
+        }).unsafeRunSync()
+
 
         val edgeDocument: VObject =
           VObject
               .empty
               .updated("_key", edgeKey)
-              .updated("_from", leftId)
-              .updated("_to", rightId)
+              .updated("_from", leftPath)
+              .updated("_to", rightPath)
 
         withEdge(relType)(_.documents.insert(document = edgeDocument, overwrite = true)).map(_ => ().resultOk)
 
