@@ -13,6 +13,7 @@ import cats.syntax.either._
 package object api {
 
   type ApiResult[R] = Either[ApiError, R]
+  type ApiCall[F[_], R] = EitherT[F, ApiError, R]
   type ApiFree[F[_], R] = EitherT[Free[F, *], ApiError, R]
 
   implicit class ApiOps[R](r: R) {

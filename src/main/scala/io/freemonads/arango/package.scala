@@ -6,8 +6,10 @@
 
 package io.freemonads
 
+import avokka.arangodb.ArangoGraph.ArangoDatabaseGrapOps
 import avokka.arangodb.fs2.Arango
 import avokka.arangodb.models.CollectionCreate.KeyOptions
+import avokka.arangodb.models.GraphInfo.{GraphEdgeDefinition, GraphRepresentation}
 import avokka.arangodb.models.{CollectionCreate, CollectionType}
 import avokka.arangodb.protocol.{ArangoClient, ArangoError, ArangoResponse}
 import avokka.arangodb.types.{CollectionName, DocumentKey}
@@ -61,6 +63,59 @@ package object arango {
       })
     }
 
+    /*
+    def withGraph[A](graphName: String)(body: ArangoCollection[IO] => IO[A]): IO[A] = {
+      clientR.use(client => {
+
+        val collection = client.db.collection(CollectionName(collectionName))
+
+        collection.info()
+            .handleErrorWith {
+              case ArangoError.Response(ArangoResponse.Header(_, _, 404, _), _) =>
+                logger.info(s"""collection $collectionName doesn't exist, creating new one""".stripMargin)
+                val colOptions = (c: CollectionCreate) =>
+                  c.copy(
+                    keyOptions = Some(KeyOptions(allowUserKeys = Some(true))),
+                    `type` = collectionType)
+                collection.create(colOptions).handleErrorWith {
+                  case ArangoError.Response(ArangoResponse.Header(_, _, 409, _), _) =>
+                    logger.info(s"2 threads creating same collection: $collectionName, ignoring error")
+                    collection.info()
+                }
+            }
+            .flatMap(_ => body(collection))
+      })
+    }
+    */
+    def withGraph(graphName: String, edge: String, target: String)(implicit client: ArangoClient[IO]): IO[ApiResult[GraphRepresentation]] = {
+
+      val graph = (new ArangoDatabaseGrapOps(client.db)).graph(graphName)
+      val info = graph
+          .info()
+          .map(_.body.graph.resultOk)
+          .handleErrorWith {
+            case ArangoError.Response(ArangoResponse.Header(_, _, 404, _), _) =>
+              val graphEdges = List(GraphEdgeDefinition(edge, List(graphName), List(target)))
+              graph.create(g => g.copy(edgeDefinitions = graphEdges)).map(_.body.graph.resultOk)
+              //ResourceNotFoundError(s"Graph $graphName not found, creating new one".some).resultError.pure[IO]
+          }
+
+      /*
+      info.flatMap(_ match {
+        case Right(graphRepresentation) =>
+          if(!graphRepresentation.edgeDefinitions.map(_.collection).contains(edge)) {
+            val graphEdges = List(GraphEdgeDefinition(edge, List(graphName), List(target)))
+            graph.create(g => g.copy(edgeDefinitions = graphEdges)).map(_.body.graph.resultOk)
+          } else {
+            graphRepresentation.resultOk.pure[IO]
+          }
+        case error => error.pure[IO]
+      })
+
+       */
+      info
+    }
+
     override def apply[A](op: ResourceAlgebra[A]): IO[A] = (op match {
       case Store(resourceUri, r, ser, deser) =>
 
@@ -99,14 +154,15 @@ package object arango {
 
       case LinkResources(leftUri, rightUri, relType) =>
 
-        import avokka.arangodb.ArangoGraph._
-
         val leftPath = leftUri.path.toString().substring(1)
         val rightPath = rightUri.path.toString().substring(1)
 
         val Array(leftCol, leftId) = leftPath.split("/")
-        val Array(_, rightId) = rightPath.split("/")
+        val Array(rightCol, rightId) = rightPath.split("/")
         val edgeKey = leftId + "-" + rightId
+
+        /*
+        import avokka.arangodb.ArangoGraph._
 
 
         clientR.use(client => {
@@ -120,6 +176,9 @@ package object arango {
         }).unsafeRunSync()
 
 
+         */
+
+
         val edgeDocument: VObject =
           VObject
               .empty
@@ -127,7 +186,12 @@ package object arango {
               .updated("_from", leftPath)
               .updated("_to", rightPath)
 
-        withEdge(relType)(_.documents.insert(document = edgeDocument, overwrite = true)).map(_ => ().resultOk)
+        val edge = withEdge(relType)(_.documents.insert(document = edgeDocument, overwrite = true)).map(_ => ().resultOk)
+
+        val graphIO = clientR.use(client => withGraph(leftCol, relType, rightCol)(client))
+        println(s"Graph ${graphIO.unsafeRunSync()}")
+
+        edge
 
 
     }).handleErrorWith(t => arangoErrorToApiResult(t).pure[IO]).map(_.asInstanceOf[A])

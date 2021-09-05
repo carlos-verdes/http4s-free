@@ -80,7 +80,9 @@ object rest {
       case NonAuthorizedError(details, cause) =>
         details.foreach(d => logger.error(s"Non authorized error: $d"))
         Forbidden(cause.map(_.getLocalizedMessage).getOrElse(""))
-      case ResourceNotFoundError(cause) => NotFound(causeMessage(cause))
+      case ResourceNotFoundError(details, cause) =>
+        details.foreach(d => logger.error(s"Request not found error: $d"))
+        NotFound(causeMessage(cause))
       case ConflictError(cause) => Conflict(causeMessage(cause))
       case RuntimeError(cause) => InternalServerError(causeMessage(cause))
       case NotImplementedError(method) =>

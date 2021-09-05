@@ -6,13 +6,11 @@
 
 package avokka.arangodb
 
-import avokka.arangodb.models.GraphInfo
-import avokka.arangodb.models.GraphInfo.GraphRepresentation
+import avokka.arangodb.models.{GraphCreate, GraphInfo}
 import avokka.arangodb.protocol.{ArangoClient, ArangoResponse}
 import avokka.arangodb.types.DatabaseName
 import cats.Functor
 
-case class GraphResponse(graph: GraphRepresentation)
 
 trait ArangoGraph[F[_]] {
 
@@ -25,7 +23,7 @@ trait ArangoGraph[F[_]] {
    * @param setup modify creation options
    * @return named graph information
    */
-//  def create(setup: GraphCreate => GraphCreate = identity): F[ArangoResponse[GraphInfo]]
+  def create(setup: GraphCreate => GraphCreate = identity): F[ArangoResponse[GraphInfo.Response]]
 
   /**
    * Return information about collection
@@ -33,20 +31,6 @@ trait ArangoGraph[F[_]] {
    * @return collection information
    */
   def info(): F[ArangoResponse[GraphInfo.Response]]
-
-  /**
-   * Load collection
-   *
-   * @return collection information
-   */
-  //def load(): F[ArangoResponse[CollectionInfo]]
-
-  /**
-   * Unload collection
-   *
-   * @return collection information
-   */
-  //def unload(): F[ArangoResponse[CollectionInfo]]
 }
 
 object ArangoGraph {
@@ -57,8 +41,13 @@ object ArangoGraph {
 
       private val path: String = "/_api/gharial/" + name
 
-      override def info(): F[ArangoResponse[GraphInfo.Response]] =
-        GET(database, path).execute
+      override def info(): F[ArangoResponse[GraphInfo.Response]] = GET(database, path).execute
+
+      override def create(setup: GraphCreate => GraphCreate): F[ArangoResponse[GraphInfo.Response]] = {
+
+        val graphCreate = setup(GraphCreate(name))
+        POST(database, "/_api/gharial/", graphCreate.parameters).body(graphCreate).execute
+      }
     }
 
   implicit class ArangoDatabaseGrapOps[F[_]: ArangoClient: Functor](db: ArangoDatabase[F]) {
