@@ -4,8 +4,6 @@
 
 
 package io.freemonads
-package http
-
 
 import cats.effect.{IO, Sync, Timer}
 import cats.{Functor, ~>}
@@ -25,8 +23,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait RestRoutes extends IOMatchers {
 
-  import api._
-  import rest._
+  import http._
 
   case class Mock(id: Option[String], name: String, age: Int)
 
@@ -40,31 +37,35 @@ trait RestRoutes extends IOMatchers {
   val existingId = "id456"
   val existingMock = Mock(Some(existingId), "name123", 23)
 
-  def mockRoutes[F[_]: Sync : Timer : Functor, Algebra[_]](
-      implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
+  def testRoutes[F[_]: Sync : Timer : Functor, Algebra[_]](
+      implicit httpFreeDsl: HttpFreeDsl[Algebra],
       interpreters: Algebra ~> F): HttpRoutes[F] = {
 
     val dsl = new Http4sDsl[F]{}
     import dsl._
-    import http4sFreeDsl._
+    import httpFreeDsl._
 
     HttpRoutes.of[F] {
+      /*
       case GET -> Root / "mocks" =>
         for  {
-          mock <- Mock(Some("id123"), "name123", 23).resultOk.liftFree[Algebra]
+          mock <- Free.pure[Algebra, Mock](Mock(Some("id123"), "name123", 23))
         } yield Ok(mock)
-
+       */
       case r @ POST -> Root / "mocks" =>
         for {
           mockRequest <- parseRequest[F, Mock](r)
-        } yield Created(mockRequest.copy(id = Some(createdId)), Location(uri"/mocks" / createdId))
+        } yield {
+          Created(mockRequest.copy(id = Some(createdId)), Location(uri"/mocks" / createdId))
+        }
     }
   }
 
   implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
-  implicit val interpreters = http4sInterpreter[IO]
+  implicit val interpreters = httpFreeInterpreter[IO]
 
-  val mockService = mockRoutes[IO, Http4sAlgebra]
+  val testService = testRoutes[IO, HttpFreeAlgebra]
+
 
   val createMockRequest: Request[IO] = Request[IO](Method.POST, uri"/mocks").withEntity(newMock)
   val invalidRequest: Request[IO] = Request[IO](Method.POST, uri"/mocks").withEntity(json"""{ "wrongJson": "" }""")
@@ -85,27 +86,31 @@ class Http4sFreeIT extends Specification with RestRoutes with Http4FreeIOMatcher
           Response with 500 error for runtime issues     $manageRuntimeErrors
           """
 
-  import api._
   import org.http4s.dsl.io._
+  import error._
+  import http._
 
   def httpWithFreeMonads: MatchResult[Any] =
-    mockService.orNotFound(createMockRequest) must returnValue { (response: Response[IO]) =>
+    testService.orNotFound(createMockRequest) must returnValue { (response: Response[IO]) =>
       response must haveStatus(Created) and
           (response must haveBody(createdMock)) and
           (response must containHeader(Location(createMockRequest.uri / createdMock.id.getOrElse(""))))
     }
 
-  def manageParsingErrors: MatchResult[Any] = mockService.orNotFound(invalidRequest) must returnStatus(BadRequest)
+  def manageParsingErrors: MatchResult[Any] = testService.orNotFound(invalidRequest) must returnStatus(BadRequest)
 
   def manageAuthErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](NonAuthorizedError(None)) must returnStatus(Forbidden)
+    apiErrorToResponse[IO](NonAuthorizedError(None)) must returnStatus(Forbidden)
 
-  def manageNotFound: MatchResult[Any] = rest.apiErrorToResponse[IO](ResourceNotFoundError()) must returnStatus(NotFound)
+  def manageNotFound: MatchResult[Any] =
+    apiErrorToResponse[IO](ResourceNotFoundError()) must returnStatus(NotFound)
 
   def manageNotImplementedErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](NotImplementedError("some method")) must returnStatus(NotImplemented)
+    apiErrorToResponse[IO](NotImplementedError("some method")) must returnStatus(NotImplemented)
 
-  def manageConflictErrors: MatchResult[Any] = rest.apiErrorToResponse[IO](ConflictError()) must returnStatus(Conflict)
+  def manageConflictErrors: MatchResult[Any] =
+    apiErrorToResponse[IO](ConflictError()) must returnStatus(Conflict)
 
-  def manageRuntimeErrors: MatchResult[Any] = rest.apiErrorToResponse[IO](RuntimeError()) must returnStatus(InternalServerError)
+  def manageRuntimeErrors: MatchResult[Any] =
+    apiErrorToResponse[IO](RuntimeError()) must returnStatus(InternalServerError)
 }
