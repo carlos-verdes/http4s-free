@@ -7,7 +7,7 @@
 package io.freemonads.api
 
 
-sealed trait ApiError
+sealed trait ApiError extends Throwable
 case class RequestFormatError(message: Option[Any] = None, cause: Option[Throwable] = None) extends ApiError
 case class NonAuthorizedError(message: Option[Any] = None, cause: Option[Throwable] = None) extends ApiError
 case class ResourceNotFoundError(cause: Option[Throwable] = None) extends ApiError

@@ -13,6 +13,7 @@ import cats.data.EitherK
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.~>
 import io.circe.generic.auto._
+import io.freemonads.interpreters.arangoStore.arangoStoreInterpreter
 import org.http4s.HttpRoutes
 import org.http4s.blaze.server.BlazeServerBuilder
 import org.http4s.circe.CirceEntityCodec._
@@ -24,26 +25,28 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 
 case class Mock(name: String, age: Int)
+case class Pot(name: String)
 
 object Main extends IOApp {
 
-  import http.resource._
-  import http.rest._
-  import io.freemonads.arango._
+  import store._
+  import http2._
 
-  type TestAlgebra[R] = EitherK[Http4sAlgebra,  ResourceAlgebra, R]
-  type ArangoResourceDsl = ResourceDsl[TestAlgebra, VPackEncoder, VPackDecoder]
+  type TestAlgebra[R] = EitherK[HttpFreeAlgebra,  HttpStoreAlgebra, R]
+  type ArangoResourceDsl = HttpStoreDsl[TestAlgebra, VPackEncoder, VPackDecoder]
 
-  implicit val testEncoder: VPackEncoder[Mock] = VPackEncoder.gen
-  implicit val testDecoder: VPackDecoder[Mock] = VPackDecoder.gen
+  implicit val mockEncoder: VPackEncoder[Mock] = VPackEncoder.gen
+  implicit val mockDecoder: VPackDecoder[Mock] = VPackDecoder.gen
+  implicit val potEncoder: VPackEncoder[Pot] = VPackEncoder.gen
+  implicit val potDecoder: VPackDecoder[Pot] = VPackDecoder.gen
 
   def testRoutes(
-      implicit http4sFreeDsl: Http4sFreeDsl[TestAlgebra],
-      resourceDsl: ArangoResourceDsl,
+      implicit httpFreeDsl: HttpFreeDsl[TestAlgebra],
+      storeDsl: ArangoResourceDsl,
       interpreters: TestAlgebra ~> IO): HttpRoutes[IO] = {
 
-    import http4sFreeDsl._
-    import resourceDsl._
+    import httpFreeDsl._
+    import storeDsl._
 
     HttpRoutes.of[IO] {
       case r @ GET -> Root / "mocks" / _ =>
@@ -61,6 +64,17 @@ object Main extends IOApp {
         for {
           _ <- link(uri"/" / "mocks" / leftId, uri"/" / "mocks" / rightId, relType)
         } yield Ok()
+
+      case r @ POST -> Root / "pots" =>
+        for {
+          potRequest <- parseRequest[IO, Pot](r)
+          savedPot <- store[Pot](r.uri / potRequest.name.toLowerCase, potRequest)
+        } yield savedPot.created[IO]
+
+      case POST -> Root / leftId / "eats" / rightId =>
+        for {
+          _ <- link(uri"/" / "mocks" / leftId, uri"/" / "pots" / rightId, "eats")
+        } yield Ok()
     }
   }
 
@@ -69,9 +83,8 @@ object Main extends IOApp {
 
   implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
 
-
   implicit def interpreters: TestAlgebra ~> IO =
-    http4sInterpreter[IO] or arangoResourceInterpreter(arangoResource)
+    httpFreeInterpreter[IO] or arangoStoreInterpreter(arangoResource)
 
 
   val app = testRoutes.orNotFound
