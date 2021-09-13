@@ -63,9 +63,4 @@ object ArangoGraph {
       override def replaceEdgeDefinition(ed: => GraphEdgeDefinition): F[ArangoResponse[GraphInfo.Response]] =
         PUT(database, path + "/edge/" + ed.collection).body(EdgeDefinitionCreate(ed)).execute
     }
-
-  implicit class ArangoDatabaseGrapOps[F[_]: ArangoClient: Functor](db: ArangoDatabase[F]) {
-
-    def graph(graphName: String): ArangoGraph[F] = ArangoGraph[F](db.name, graphName)
-  }
 }

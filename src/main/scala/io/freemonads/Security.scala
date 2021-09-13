@@ -6,13 +6,14 @@
 
 package io.freemonads
 
+import java.security.{NoSuchAlgorithmException, SecureRandom, Security}
+
 import cats.effect.Sync
 import cats.free.Free
 import cats.implicits.toFlatMapOps
 import cats.syntax.functor._
 import cats.syntax.option._
 import cats.{Applicative, InjectK, ~>}
-import io.freemonads.api._
 import pureconfig.ConfigSource
 import tsec.jws.mac.{JWSMacCV, JWTMac}
 import tsec.jwt.JWTClaims
@@ -45,6 +46,7 @@ object security {
 
     import pureconfig.generic.auto._
     import tsec.common._
+    import error._
 
     case class JwtConfig(signingKey: String)
 
@@ -72,5 +74,21 @@ object security {
       }
     }
   }
+
+  // Windows hack
+  private def tsecWindowsFix(): Unit =
+    try {
+      SecureRandom.getInstance("NativePRNGNonBlocking")
+      ()
+    } catch {
+      case _: NoSuchAlgorithmException =>
+        val secureRandom = new SecureRandom()
+        val defaultSecureRandomProvider = secureRandom.getProvider.get(s"SecureRandom.${secureRandom.getAlgorithm}")
+        secureRandom.getProvider.put("SecureRandom.NativePRNGNonBlocking", defaultSecureRandomProvider)
+        Security.addProvider(secureRandom.getProvider)
+        ()
+    }
+
+  tsecWindowsFix()
 }
 

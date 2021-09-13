@@ -28,7 +28,7 @@ import org.log4s.getLogger
 object arangoStore {
 
   import error._
-  import store._
+  import httpStore._
 
   val RESOURCE_RELS_GRAPH = "resource-rels"
 

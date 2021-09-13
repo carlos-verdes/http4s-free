@@ -25,20 +25,17 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 
 case class Mock(name: String, age: Int)
-case class Pot(name: String)
 
 object Main extends IOApp {
 
-  import store._
-  import http2._
+  import httpStore._
+  import http._
 
   type TestAlgebra[R] = EitherK[HttpFreeAlgebra,  HttpStoreAlgebra, R]
   type ArangoResourceDsl = HttpStoreDsl[TestAlgebra, VPackEncoder, VPackDecoder]
 
   implicit val mockEncoder: VPackEncoder[Mock] = VPackEncoder.gen
   implicit val mockDecoder: VPackDecoder[Mock] = VPackDecoder.gen
-  implicit val potEncoder: VPackEncoder[Pot] = VPackEncoder.gen
-  implicit val potDecoder: VPackDecoder[Pot] = VPackDecoder.gen
 
   def testRoutes(
       implicit httpFreeDsl: HttpFreeDsl[TestAlgebra],
@@ -63,17 +60,6 @@ object Main extends IOApp {
       case POST -> Root / "mocks" / leftId / relType / rightId =>
         for {
           _ <- link(uri"/" / "mocks" / leftId, uri"/" / "mocks" / rightId, relType)
-        } yield Ok()
-
-      case r @ POST -> Root / "pots" =>
-        for {
-          potRequest <- parseRequest[IO, Pot](r)
-          savedPot <- store[Pot](r.uri / potRequest.name.toLowerCase, potRequest)
-        } yield savedPot.created[IO]
-
-      case POST -> Root / leftId / "eats" / rightId =>
-        for {
-          _ <- link(uri"/" / "mocks" / leftId, uri"/" / "pots" / rightId, "eats")
         } yield Ok()
     }
   }

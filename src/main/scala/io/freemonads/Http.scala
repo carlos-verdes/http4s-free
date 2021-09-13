@@ -11,10 +11,11 @@ import cats.free.Free
 import cats.implicits.{catsSyntaxApplicativeError, catsSyntaxOptionId, toBifunctorOps, toFlatMapOps, toFunctorOps}
 import cats.{Applicative, InjectK, ~>}
 import org.http4s.dsl.Http4sDsl
-import org.http4s.{DecodeFailure, EntityDecoder, Request, Response}
+import org.http4s.headers.Authorization
+import org.http4s.{Credentials, DecodeFailure, EntityDecoder, Request, Response}
 import org.log4s.getLogger
 
-object http2 {
+object http {
 
   import error._
 
@@ -23,12 +24,24 @@ object http2 {
 
   sealed trait HttpFreeAlgebra[Result]
   case class ParseRequest[F[_], R](request: Request[F], ED: EntityDecoder[F, R]) extends HttpFreeAlgebra[R]
+  case class GetAuthHeader[F[_]](request: Request[F]) extends HttpFreeAlgebra[Authorization]
+  case class GetJwtTokenFromHeader[F[_]](request: Request[F]) extends HttpFreeAlgebra[String]
 
   class HttpFreeDsl[Algebra[_]](implicit I: InjectK[HttpFreeAlgebra, Algebra]) {
 
     def parseRequest[F[_], R](request: Request[F])(implicit ED: EntityDecoder[F, R]): Free[Algebra, R] = {
-      val parseRequest: HttpFreeAlgebra[R] = ParseRequest(request, ED)
-      inject(parseRequest)
+      val _parseRequest: HttpFreeAlgebra[R] = ParseRequest(request, ED)
+      inject(_parseRequest)
+    }
+
+    def getAuthHeader[F[_], R](request: Request[F]): Free[Algebra, Authorization] = {
+      val _getAuthHeader: GetAuthHeader[F] = GetAuthHeader(request)
+      inject(_getAuthHeader)
+    }
+
+    def getJwtTokenFromHeader[F[_], R](request: Request[F]): Free[Algebra, String] = {
+      val _getJwtTokenFromHeader: GetJwtTokenFromHeader[F] = GetJwtTokenFromHeader(request)
+      inject(_getJwtTokenFromHeader)
     }
 
     private def inject = Free.liftInject[Algebra]
@@ -53,8 +66,37 @@ object http2 {
             .value
             .map(_.leftMap(decodeFailureToApiError))
             .flatMap(F.fromEither)
+
+      case GetAuthHeader(req) =>
+
+        val request: Request[F] = req.asInstanceOf[Request[F]]
+
+        getAuthFromHead(request).asInstanceOf[F[A]]
+
+      case GetJwtTokenFromHeader(req) =>
+        val request: Request[F] = req.asInstanceOf[Request[F]]
+
+        getJwtTokenFromHead(request).asInstanceOf[F[A]]
     }
   }
+
+  private def getAuthFromHead[F[_]](request: Request[F])(implicit F: MonadThrow[F]): F[Authorization] = {
+    request.headers.get[Authorization] match {
+      case Some(auth) => F.pure(auth)
+      case None => F.raiseError(NonAuthorizedError("Couldn't find an Authorization header".some))
+    }
+  }
+
+  private def getJwtTokenFromHead[F[_]](request: Request[F])(implicit F: MonadThrow[F]): F[String] = {
+    for {
+      auth <- getAuthFromHead(request)
+      token <- auth match {
+        case Authorization(Credentials.Token(_, jwtToken)) => F.pure(jwtToken)
+        case _ => F.raiseError(NonAuthorizedError("Invalid Authorization header".some))
+      }
+    } yield token
+  }
+
   implicit def decodeFailureToApiError(decodeFailure: DecodeFailure): Throwable =
     RequestFormatError(Some(decodeFailure.message), decodeFailure.cause)
 
@@ -81,7 +123,9 @@ object http2 {
       case NonAuthorizedError(details, cause) =>
         details.foreach(d => logger.error(s"Non authorized error: $d"))
         Forbidden(cause.map(_.getLocalizedMessage).getOrElse(""))
-      case ResourceNotFoundError(cause) => NotFound(causeMessage(cause))
+      case ResourceNotFoundError(details, cause) =>
+        details.foreach(d => logger.error(s"Resource not found error: $d"))
+        NotFound(causeMessage(cause))
       case ConflictError(cause) => Conflict(causeMessage(cause))
       case NotImplementedError(method) =>
         val message = s"Method: $method not implemented"

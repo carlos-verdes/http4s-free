@@ -4,8 +4,6 @@
 
 
 package io.freemonads
-package http
-
 
 import cats.effect.{IO, Sync, Timer}
 import cats.{Functor, ~>}
@@ -25,7 +23,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait RestRoutes extends IOMatchers {
 
-  import http2._
+  import http._
 
   case class Mock(id: Option[String], name: String, age: Int)
 
@@ -88,8 +86,9 @@ class Http4sFreeIT extends Specification with RestRoutes with Http4FreeIOMatcher
           Response with 500 error for runtime issues     $manageRuntimeErrors
           """
 
-  import api._
   import org.http4s.dsl.io._
+  import error._
+  import http._
 
   def httpWithFreeMonads: MatchResult[Any] =
     testService.orNotFound(createMockRequest) must returnValue { (response: Response[IO]) =>
@@ -101,17 +100,17 @@ class Http4sFreeIT extends Specification with RestRoutes with Http4FreeIOMatcher
   def manageParsingErrors: MatchResult[Any] = testService.orNotFound(invalidRequest) must returnStatus(BadRequest)
 
   def manageAuthErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](NonAuthorizedError(None)) must returnStatus(Forbidden)
+    apiErrorToResponse[IO](NonAuthorizedError(None)) must returnStatus(Forbidden)
 
   def manageNotFound: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](ResourceNotFoundError()) must returnStatus(NotFound)
+    apiErrorToResponse[IO](ResourceNotFoundError()) must returnStatus(NotFound)
 
   def manageNotImplementedErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](NotImplementedError("some method")) must returnStatus(NotImplemented)
+    apiErrorToResponse[IO](NotImplementedError("some method")) must returnStatus(NotImplemented)
 
   def manageConflictErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](ConflictError()) must returnStatus(Conflict)
+    apiErrorToResponse[IO](ConflictError()) must returnStatus(Conflict)
 
   def manageRuntimeErrors: MatchResult[Any] =
-    rest.apiErrorToResponse[IO](RuntimeError()) must returnStatus(InternalServerError)
+    apiErrorToResponse[IO](RuntimeError()) must returnStatus(InternalServerError)
 }
