@@ -14,13 +14,14 @@ import avokka.velocypack.VPackEncoder
 
 final case class GraphCreate(
     name: String,
-    edgeDefinitions: List[GraphEdgeDefinition],
-    orphanCollections: List[CollectionName],
+    edgeDefinitions: List[GraphEdgeDefinition] = List(),
+    orphanCollections: List[CollectionName] = List(),
     isSmart: Boolean = false,
     isDisjoint: Boolean = false,
-    options: Option[GraphCreate.Options] = None
+    options: Option[GraphCreate.Options] = None,
+    waitForSync: Int = 1
 ) {
-  def parameters = Map()
+  def parameters = Map("waitForSync" -> waitForSync.toString)
 }
 
 object GraphCreate { self =>
@@ -36,5 +37,6 @@ object GraphCreate { self =>
     implicit val encoder: VPackEncoder[Options] = VPackEncoder.gen
   }
 
-  implicit val encoder: VPackEncoder[CollectionCreate] = VPackEncoder.gen
+  implicit val encoderGraphInfo: VPackEncoder[GraphInfo.GraphEdgeDefinition] = VPackEncoder.gen
+  implicit val encoder: VPackEncoder[GraphCreate] = VPackEncoder.gen
 }

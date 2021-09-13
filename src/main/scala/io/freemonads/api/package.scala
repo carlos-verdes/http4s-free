@@ -6,11 +6,18 @@
 
 package io.freemonads
 
+import cats.MonadError
 import cats.data.EitherT
 import cats.free.Free
 import cats.syntax.either._
 
 package object api {
+
+  type ApiCall[F[_]] = MonadError[F, ApiError]
+
+  object ApiCall {
+    def apply[F[_]](implicit ev: ApiCall[F]): ApiCall[F] = ev
+  }
 
   type ApiResult[R] = Either[ApiError, R]
   type ApiFree[F[_], R] = EitherT[Free[F, *], ApiError, R]

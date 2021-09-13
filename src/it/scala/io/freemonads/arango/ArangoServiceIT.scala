@@ -10,7 +10,9 @@ import scala.concurrent.Future
 
 import avokka.velocypack.{VPackDecoder, VPackEncoder}
 import cats.data.{EitherK, Kleisli, OptionT}
-import cats.effect.IO
+import cats.effect.{IO, MonadThrow}
+import cats.free.Free
+import cats.implicits.catsSyntaxApplicativeId
 import cats.syntax.option._
 import cats.syntax.semigroupk._
 import cats.~>
@@ -39,22 +41,22 @@ trait IOMatchersWithLogger extends IOMatchers {
 
 trait MockServiceWithArango extends IOMatchersWithLogger {
 
-  import api._
-  import http.resource._
+  import store._
+  import interpreters.arangoStore._
 
   case class Mock(id: String, user: String, age: Int)
 
   implicit val mockEncoder: VPackEncoder[Mock] = VPackEncoder.gen
   implicit val mockDecoder: VPackDecoder[Mock] = VPackDecoder.gen
 
-  implicit val arangoInterpreter: ResourceAlgebra ~> IO = arangoIoInterpreter
+  implicit val arangoInterpreter: HttpStoreAlgebra ~> IO = arangoInterpreter
 
   val mock1 = Mock("aaa123", "Roger", 21)
   val updatedMock = Mock("456", "NewName", 36)
   val mocksUri = uri"/mocks"
   val mock1Uri = mocksUri / mock1.id
 
-  def storeAndFetch(uri: Uri, mock: Mock)(implicit dsl: ArangoDsl[ResourceAlgebra]): ApiFree[ResourceAlgebra, Mock] = {
+  def storeFetch(uri: Uri, mock: Mock)(implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Mock] = {
 
     import dsl._
 
@@ -68,7 +70,7 @@ trait MockServiceWithArango extends IOMatchersWithLogger {
       uri: Uri,
       mock: Mock,
       newMock: Mock)(
-      implicit dsl: ArangoDsl[ResourceAlgebra]): ApiFree[ResourceAlgebra, Mock] = {
+      implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Mock] = {
 
     import dsl._
 
@@ -78,18 +80,19 @@ trait MockServiceWithArango extends IOMatchersWithLogger {
     } yield updatedResource.body
   }
 
-  def fetchFromArango(uri: Uri)(implicit dsl: ArangoDsl[ResourceAlgebra]): ApiFree[ResourceAlgebra, Mock] =
+  def fetchFromArango(uri: Uri)(implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Mock] =
     dsl.fetch[Mock](uri).map(_.body)
 
 }
 
 trait AuthCases extends IOMatchersWithLogger {
 
-  import api._
-  import http.resource._
-  import http.rest._
+  import http2._
+  import store._
+  import error._
+  import interpreters.arangoStore._
   import security._
-  import security.jwt._
+  import jwt._
   import tsec.jwt.JWTClaims
 
 
@@ -117,56 +120,55 @@ trait AuthCases extends IOMatchersWithLogger {
   def userUri(userAddress: String): Uri = uri"/users" / userAddress
 
   def retrieveUser[Algebra[_]](
-      implicit resourceDsl: ArangoDsl[Algebra],
-      interpreters: Algebra ~> IO): Kleisli[IO, String, ApiResult[User]] =
-    Kleisli(id => resourceDsl.fetch[User](userUri(id)).map(_.body).value.foldMap(interpreters))
+      implicit storeDsl: ArangoStoreDsl[Algebra],
+      interpreters: Algebra ~> IO): Kleisli[IO, String, User] =
+    Kleisli(id => storeDsl.fetch[User](userUri(id)).map(_.body).foldMap(interpreters))
 
   val onFailure: AuthedRoutes[ApiError, IO] = Kleisli(req => OptionT.liftF(req.context))
 
-  def jwtTokenFromRequest(request: Request[IO]): ApiResult[String] =
+  def jwtTokenFromRequest[Algebra[_]](request: Request[IO])(implicit F: MonadThrow[Algebra]): Algebra[String] =
     request.headers.get[Authorization] match {
       case Some(credentials) => credentials match {
-        case Authorization(Credentials.Token(_, jwtToken)) => jwtToken.resultOk
-        case _ => NonAuthorizedError("Invalid Authorization header".some).resultError[String]
+        case Authorization(Credentials.Token(_, jwtToken)) => jwtToken.pure[Algebra]
+        case _ => F.raiseError(NonAuthorizedError("Invalid Authorization header".some))
       }
-      case None => NonAuthorizedError("Couldn't find an Authorization header".some).resultError[String]
+      case None => F.raiseError(NonAuthorizedError("Couldn't find an Authorization header".some))
     }
 
 
-  def log[Algebra[_]](text: String): ApiFree[Algebra, Unit] = println(text).resultOk.liftFree[Algebra]
+  def log[Algebra[_]](text: String): Free[Algebra, Unit] = Free.pure(println(text))
 
   def authUser[Algebra[_]](
-      implicit resourceDsl: ArangoDsl[Algebra],
+      implicit storeDsl: ArangoStoreDsl[Algebra],
       securityDsl: SecurityDsl[Algebra],
-      interpreters: Algebra ~> IO): Kleisli[IO, Request[IO], ApiResult[User]] =
+      interpreters: Algebra ~> IO): Kleisli[IO, Request[IO], User] =
 
     Kleisli({ request =>
       val message = for {
-        jwtToken <- jwtTokenFromRequest(request).liftFree[Algebra]
+        jwtToken <- Free.liftF[Algebra, String](jwtTokenFromRequest(request))
         _ <- log(s"jwt token: $jwtToken")
         claim <- securityDsl.validateToken(Token(jwtToken))
         _ <- log(s"claim: $claim")
-        user <- resourceDsl.fetch[User](userUri(claim.subject.value))
+        user <- storeDsl.fetch[User](userUri(claim.subject.value))
         _ <- log(s"user: $user")
       } yield user.body
 
-      val result = message.value.foldMap(interpreters)
-      result
+      message.foldMap(interpreters)
     })
 
   def authMiddleware[Algebra[_]](
-      implicit resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
+      implicit storeDsl: ArangoStoreDsl[Algebra],
       securityDsl: SecurityDsl[Algebra],
       interpreters: Algebra ~> IO): AuthMiddleware[IO, User] = AuthMiddleware(authUser, onFailure)
 
   def publicRoutes[Algebra[_]](
-      implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
-      resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
+      implicit httpFreeDsl: HttpFreeDsl[Algebra],
+      resourceDsl: ArangoStoreDsl[Algebra],
       interpreters: Algebra ~> IO): HttpRoutes[IO] = {
 
     val dsl = new Http4sDsl[IO]{}
     import dsl._
-    import http4sFreeDsl._
+    import httpFreeDsl._
     import resourceDsl._
 
     HttpRoutes.of[IO] {
@@ -181,40 +183,40 @@ trait AuthCases extends IOMatchersWithLogger {
   }
 
   def privateRoutes[Algebra[_]](
-      implicit http4sFreeDsl: Http4sFreeDsl[Algebra],
-      resourceDsl: ResourceDsl[Algebra, VPackEncoder, VPackDecoder],
+      implicit httpFreeDsl: HttpFreeDsl[Algebra],
+      resourceDsl: ArangoStoreDsl[Algebra],
       interpreters: Algebra ~> IO): AuthedRoutes[User, IO] = {
 
     val dsl = new Http4sDsl[IO]{}
     import dsl._
-    import http4sFreeDsl._
+    import httpFreeDsl._
     import resourceDsl._
 
-    val wrongAddressError = NonAuthorizedError("wrong address".some).resultError
+    val wrongAddressError = NonAuthorizedError("wrong address".some)
 
     AuthedRoutes.of[User, IO] {
       case r @ GET -> Root / "profile" as user =>
         for {
           _ <- log(s"request for profile: $r")
-          userFree <- user.resultOk.liftFree[Algebra]
+          userFree <- Free.pure[Algebra](user)
         } yield Ok(userFree)
 
       case r @ PUT -> Root / "users" / address as user =>
         for {
           UserUpdate(newUsername) <- parseRequest[IO, UserUpdate](r.req)
-          _ <- (if (address == user.address) ().resultOk else wrongAddressError).liftFree[Algebra]
+          _ <- Free.liftF[IO, String](if (address == user.address) ().pure[IO] else IO.raiseError(wrongAddressError))
           updatedUser <- store[User](r.req.uri, user.copy(username = newUsername.some))
         } yield updatedUser.ok[IO]
     }
   }
 
-  type CombinedAlgebraA[R] = EitherK[ResourceAlgebra, SecurityAlgebra, R]
+  type CombinedAlgebraA[R] = EitherK[HttpStoreAlgebra, SecurityAlgebra, R]
   type CombinedAlgebra[R] = EitherK[Http4sAlgebra, CombinedAlgebraA, R]
 
-  implicit val securityDsl = security.SecurityDsl.instance[CombinedAlgebra]
+  implicit val securityDsl = SecurityDsl.instance[CombinedAlgebra]
 
   implicit val interpreters: CombinedAlgebra ~> IO =
-    (http4sInterpreter[IO] or (arangoIoInterpreter or jwtSecurityInterpreter[IO]))
+    (httpFreeInterpreter[IO] or (arangoIoInterpreter or jwtSecurityInterpreter[IO]))
 
   val authMiddlewareInstance = authMiddleware[CombinedAlgebra]
 
@@ -257,7 +259,7 @@ class ArangoServiceIT(env: Env)
   import http.resource._
 
   implicit val ee = env.executionEnv
-  implicit val dsl = arangoDsl[ResourceAlgebra]
+  implicit val dsl = HttpStoreDsl.instance[HttpStoreAlgebra, VPackEncoder, VPackDecoder]
 
   def is: SpecStructure = s2"""
       The ArangoDB container should be ready                  $arangoIsReady
@@ -273,7 +275,7 @@ class ArangoServiceIT(env: Env)
 
   def storeNewResource: MatchResult[Any] = dsl.store[Mock](mock1Uri, mock1) must resultOk(RestResource(mock1Uri, mock1))
 
-  def storeAndFetch: MatchResult[Any] = storeAndFetch(mocksUri, mock1) must resultOk(mock1)
+  def storeAndFetch: MatchResult[Any] = storeFetch(mocksUri, mock1) must resultOk(mock1)
 
   def storeAndUpdate: MatchResult[Any] = storeAndUpdate(mocksUri, mock1, updatedMock) must resultOk(updatedMock)
 

@@ -6,8 +6,8 @@
 
 package avokka.arangodb
 
-import avokka.arangodb.models.GraphInfo
-import avokka.arangodb.models.GraphInfo.GraphRepresentation
+import avokka.arangodb.models.{EdgeDefinitionCreate, GraphCreate, GraphInfo}
+import avokka.arangodb.models.GraphInfo.{GraphEdgeDefinition, GraphRepresentation}
 import avokka.arangodb.protocol.{ArangoClient, ArangoResponse}
 import avokka.arangodb.types.DatabaseName
 import cats.Functor
@@ -25,7 +25,7 @@ trait ArangoGraph[F[_]] {
    * @param setup modify creation options
    * @return named graph information
    */
-//  def create(setup: GraphCreate => GraphCreate = identity): F[ArangoResponse[GraphInfo]]
+   def create(setup: GraphCreate => GraphCreate = identity): F[ArangoResponse[GraphInfo.Response]]
 
   /**
    * Return information about collection
@@ -34,19 +34,9 @@ trait ArangoGraph[F[_]] {
    */
   def info(): F[ArangoResponse[GraphInfo.Response]]
 
-  /**
-   * Load collection
-   *
-   * @return collection information
-   */
-  //def load(): F[ArangoResponse[CollectionInfo]]
+  def addEdgeDefinition(edgeDefinition: => GraphEdgeDefinition): F[ArangoResponse[GraphInfo.Response]]
 
-  /**
-   * Unload collection
-   *
-   * @return collection information
-   */
-  //def unload(): F[ArangoResponse[CollectionInfo]]
+  def replaceEdgeDefinition(edgeDefinition: => GraphEdgeDefinition): F[ArangoResponse[GraphInfo.Response]]
 }
 
 object ArangoGraph {
@@ -57,8 +47,21 @@ object ArangoGraph {
 
       private val path: String = "/_api/gharial/" + name
 
-      override def info(): F[ArangoResponse[GraphInfo.Response]] =
-        GET(database, path).execute
+      override def info(): F[ArangoResponse[GraphInfo.Response]] = GET(database, path).execute
+
+      override def create(setup: GraphCreate => GraphCreate): F[ArangoResponse[GraphInfo.Response]] = {
+
+        val graphCreate = setup(GraphCreate(name))
+        POST(database, "/_api/gharial/", graphCreate.parameters).body(graphCreate).execute
+      }
+
+      override def addEdgeDefinition(edgeDefinition: => GraphEdgeDefinition): F[ArangoResponse[GraphInfo.Response]] = {
+
+        POST(database, path + "/edge").body(EdgeDefinitionCreate(edgeDefinition)).execute
+      }
+
+      override def replaceEdgeDefinition(ed: => GraphEdgeDefinition): F[ArangoResponse[GraphInfo.Response]] =
+        PUT(database, path + "/edge/" + ed.collection).body(EdgeDefinitionCreate(ed)).execute
     }
 
   implicit class ArangoDatabaseGrapOps[F[_]: ArangoClient: Functor](db: ArangoDatabase[F]) {

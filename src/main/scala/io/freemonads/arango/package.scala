@@ -6,6 +6,7 @@
 
 package io.freemonads
 
+/*
 import avokka.arangodb.fs2.Arango
 import avokka.arangodb.models.CollectionCreate.KeyOptions
 import avokka.arangodb.models.{CollectionCreate, CollectionType}
@@ -21,8 +22,10 @@ import org.http4s.implicits.http4sLiteralsSyntax
 import org.log4s.getLogger
 import org.typelevel.log4cats.Logger
 
-package object arango {
 
+ */
+package object arango {
+/*
   import api._
   import http.resource._
 
@@ -113,7 +116,7 @@ package object arango {
           implicit val _client: ArangoClient[IO] = client
 
           println(s"Testing graph info for collection $leftCol...")
-          val info = (new ArangoDatabaseGrapOps(client.db)).graph(leftCol).info().unsafeRunSync()
+            val info = (new ArangoDatabaseGrapOps(client.db)).graph(leftCol).info().unsafeRunSync()
           println(s"Graph into: $info")
 
           ().pure[IO]
@@ -154,4 +157,5 @@ package object arango {
 
     arangoResourceInterpreter(arangoResource)
   }
+*/
 }
