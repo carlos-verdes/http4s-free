@@ -14,7 +14,7 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.{DecodeFailure, EntityDecoder, Request, Response}
 import org.log4s.getLogger
 
-object http2 {
+object http {
 
   import error._
 

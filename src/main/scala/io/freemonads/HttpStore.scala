@@ -12,9 +12,9 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.headers.{Link, LinkValue, Location}
 import org.http4s.{EntityEncoder, Response, Uri}
 
-object store {
+object httpStore {
 
-  import http2._
+  import http._
 
   case class HttpResource[R](uri: Uri, body: R)
 

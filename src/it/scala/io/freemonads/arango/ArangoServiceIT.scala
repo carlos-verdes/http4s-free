@@ -19,7 +19,7 @@ import cats.~>
 import com.whisk.docker.impl.spotify._
 import com.whisk.docker.specs2.DockerTestKit
 import io.circe.generic.auto._
-import io.freemonads.arango.docker.DockerArango
+import io.freemonads.docker.DockerArango
 import io.freemonads.specs2.Http4FreeIOMatchers
 import org.http4s._
 import org.http4s.circe.CirceEntityCodec._
@@ -41,7 +41,7 @@ trait IOMatchersWithLogger extends IOMatchers {
 
 trait MockServiceWithArango extends IOMatchersWithLogger {
 
-  import store._
+  import httpStore._
   import interpreters.arangoStore._
 
   case class Mock(id: String, user: String, age: Int)
@@ -87,8 +87,8 @@ trait MockServiceWithArango extends IOMatchersWithLogger {
 
 trait AuthCases extends IOMatchersWithLogger {
 
-  import http2._
-  import store._
+  import http._
+  import httpStore._
   import error._
   import interpreters.arangoStore._
   import security._
@@ -177,7 +177,7 @@ trait AuthCases extends IOMatchersWithLogger {
           userRequest <- parseRequest[IO, UserRequest](r)
           userAddress = userRequest.address
           user = User(userAddress, userNonce, None)
-          storedUser <- store[User](userUri(user), user)
+          storedUser <- httpStore[User](userUri(user), user)
         } yield storedUser.created[IO]
     }
   }
@@ -205,7 +205,7 @@ trait AuthCases extends IOMatchersWithLogger {
         for {
           UserUpdate(newUsername) <- parseRequest[IO, UserUpdate](r.req)
           _ <- Free.liftF[IO, String](if (address == user.address) ().pure[IO] else IO.raiseError(wrongAddressError))
-          updatedUser <- store[User](r.req.uri, user.copy(username = newUsername.some))
+          updatedUser <- httpStore[User](r.req.uri, user.copy(username = newUsername.some))
         } yield updatedUser.ok[IO]
     }
   }
@@ -273,11 +273,11 @@ class ArangoServiceIT(env: Env)
 
   def arangoIsReady: MatchResult[Future[Boolean]] = isContainerReady(arangoContainer) must beTrue.await
 
-  def storeNewResource: MatchResult[Any] = dsl.store[Mock](mock1Uri, mock1) must resultOk(RestResource(mock1Uri, mock1))
+  def storeNewResource: MatchResult[Any] = dsl.store[Mock](mock1Uri, mock1) must matchFree(RestResource(mock1Uri, mock1))
 
-  def storeAndFetch: MatchResult[Any] = storeFetch(mocksUri, mock1) must resultOk(mock1)
+  def storeAndFetch: MatchResult[Any] = storeFetch(mocksUri, mock1) must matchFree(mock1)
 
-  def storeAndUpdate: MatchResult[Any] = storeAndUpdate(mocksUri, mock1, updatedMock) must resultOk(updatedMock)
+  def storeAndUpdate: MatchResult[Any] = storeAndUpdate(mocksUri, mock1, updatedMock) must matchFree(updatedMock)
 
   def returnNotFound: MatchResult[Any] = fetchFromArango(uri"/emptyCollection/123") must resultErrorNotFound
 

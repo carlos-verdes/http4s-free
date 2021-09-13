@@ -29,8 +29,8 @@ case class Pot(name: String)
 
 object Main extends IOApp {
 
-  import store._
-  import http2._
+  import httpStore._
+  import http._
 
   type TestAlgebra[R] = EitherK[HttpFreeAlgebra,  HttpStoreAlgebra, R]
   type ArangoResourceDsl = HttpStoreDsl[TestAlgebra, VPackEncoder, VPackDecoder]

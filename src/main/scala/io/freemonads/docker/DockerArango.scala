@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-package io.freemonads.arango.docker
+package io.freemonads.docker
 
 import scala.concurrent.duration._
 

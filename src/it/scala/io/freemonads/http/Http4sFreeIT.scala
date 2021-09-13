@@ -25,7 +25,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait RestRoutes extends IOMatchers {
 
-  import http2._
+  import http._
 
   case class Mock(id: Option[String], name: String, age: Int)
 

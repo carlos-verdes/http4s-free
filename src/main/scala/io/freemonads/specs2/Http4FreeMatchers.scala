@@ -11,14 +11,14 @@ import scala.concurrent.duration.FiniteDuration
 import scala.reflect.ClassTag
 
 import cats.effect.IO
+import cats.free.Free
 import cats.syntax.flatMap._
 import cats.{Id, Monad, MonadError, ~>}
+import io.freemonads.error._
 import org.http4s._
 import org.specs2.matcher.{Matcher, Matchers, RunTimedMatchers, ValueCheck}
 
 trait Http4FreeMatchers[F[_]] extends RunTimedMatchers[F] with Matchers {
-
-  import api._
 
   def haveStatus(expected: Status): Matcher[Response[F]] =
     be_===(expected) ^^ { r: Response[F] => r.status.aka("the response status") }
@@ -44,23 +44,24 @@ trait Http4FreeMatchers[F[_]] extends RunTimedMatchers[F] with Matchers {
       m.headers.get[H](H).asInstanceOf[Option[H]].aka("the particular header")
     }
 
-  def resultOk[A[_], T](check: ValueCheck[T])(implicit interpreter: A ~> F, M: Monad[F]):  Matcher[ApiFree[A, T]] =
-    returnValue[ApiResult[T]](beRight(check)) ^^ (_.value.foldMap(interpreter).aka("Free logic"), 0)
 
-  def resultError[A[_], T, E <: ApiError :  ClassTag](implicit interprtr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
-    returnValue[ApiResult[T]](beLeft(haveClass[E])) ^^ (_.value.foldMap(interprtr).aka("Free logic"), 0)
+  def matchFree[A[_], T](check: ValueCheck[T])(implicit interpreter: A ~> F, M: Monad[F]):  Matcher[Free[A, T]] =
+    returnValue[T](check) ^^ (_.foldMap(interpreter).aka("Free logic"), 0)
 
-  def resultErrorNotFound[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
-    resultError[A, T, ResourceNotFoundError]
+  def matchFreeError[A[_], T, E <: ApiError :  ClassTag](implicit interprtr: A ~> F, M: Monad[F]): Matcher[Free[A, T]] =
+    returnValue[T](throwA[E]) ^^ (_.foldMap(interprtr).aka("Free error logic"), 0)
 
-  def resultErrorConflict[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
-    resultError[A, T, ConflictError]
+  def matchFreeErrorNotFound[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[Free[A, T]] =
+    matchFreeError[A, T, ResourceNotFoundError]
 
-  def resultFormatError[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
-    resultError[A, T, RequestFormatError]
+  def matchFreeErrorConflict[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[Free[A, T]] =
+    matchFreeError[A, T, ConflictError]
 
-  def resultNonAuthorizedError[A[_], T](implicit intr: A ~> F, M: Monad[F]): Matcher[ApiFree[A, T]] =
-    resultError[A, T, NonAuthorizedError]
+  def matchFreeFormatError[A[_], T](implicit interprtr: A ~> F, M: Monad[F]): Matcher[Free[A, T]] =
+    matchFreeError[A, T, RequestFormatError]
+
+  def matchFreeNonAuthorizedError[A[_], T](implicit intr: A ~> F, M: Monad[F]): Matcher[Free[A, T]] =
+    matchFreeError[A, T, NonAuthorizedError]
 }
 
 trait Http4FreeIOMatchers extends Http4FreeMatchers[IO]
