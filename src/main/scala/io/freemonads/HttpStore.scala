@@ -12,9 +12,9 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.headers.{Link, LinkValue, Location}
 import org.http4s.{EntityEncoder, Response, Uri}
 
-object store {
+object httpStore {
 
-  import http2._
+  import http._
 
   case class HttpResource[R](uri: Uri, body: R)
 
@@ -56,10 +56,13 @@ object store {
     def store[R](uri: Uri, r: R)(implicit S: Serializer[R], D: Deserializer[R]): Free[Algebra, HttpResource[R]] =
       inject(Store(uri, r, S, D))
 
+    def store[R](res: HttpResource[R])(implicit S: Serializer[R], D: Deserializer[R]): Free[Algebra, HttpResource[R]] =
+      store(res.uri, res.body)
+
     def fetch[R](resourceUri: Uri)(implicit D: Deserializer[R]): Free[Algebra, HttpResource[R]] =
       inject(Fetch(resourceUri, D))
 
-    def link(left: HttpResource[Any], right: HttpResource[Any], relType: String): Free[Algebra, Unit] =
+    def link[L, R](left: HttpResource[L], right: HttpResource[R], relType: String): Free[Algebra, Unit] =
       link(left.uri, right.uri, relType)
 
     def link(leftUri: Uri, rightUri: Uri, relType: String): Free[Algebra, Unit] =

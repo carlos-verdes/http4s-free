@@ -8,6 +8,8 @@ package arango
 import java.security.{NoSuchAlgorithmException, SecureRandom, Security}
 import scala.concurrent.Future
 
+import avokka.arangodb.ArangoConfiguration
+import avokka.arangodb.fs2.Arango
 import avokka.velocypack.{VPackDecoder, VPackEncoder}
 import cats.data.{EitherK, Kleisli, OptionT}
 import cats.effect.{IO, MonadThrow}
@@ -19,7 +21,9 @@ import cats.~>
 import com.whisk.docker.impl.spotify._
 import com.whisk.docker.specs2.DockerTestKit
 import io.circe.generic.auto._
-import io.freemonads.arango.docker.DockerArango
+import io.freemonads.docker.DockerArango
+import io.freemonads.httpStore.HttpStoreAlgebra
+import io.freemonads.interpreters.arangoStore.arangoStoreInterpreter
 import io.freemonads.specs2.Http4FreeIOMatchers
 import org.http4s._
 import org.http4s.circe.CirceEntityCodec._
@@ -39,45 +43,72 @@ trait IOMatchersWithLogger extends IOMatchers {
   implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
 }
 
-trait MockServiceWithArango extends IOMatchersWithLogger {
+trait ArangoInterpreter extends IOMatchersWithLogger {
 
-  import store._
+  val arangoConfig = ArangoConfiguration.load()
+  val arangoResource = Arango(arangoConfig)
+
+  implicit val arangoInterpreter: HttpStoreAlgebra ~> IO = arangoStoreInterpreter(arangoResource)
+}
+
+trait MockServiceWithArango extends ArangoInterpreter {
+
+  import httpStore._
   import interpreters.arangoStore._
 
   case class Mock(id: String, user: String, age: Int)
+  case class Person(name: String)
 
   implicit val mockEncoder: VPackEncoder[Mock] = VPackEncoder.gen
   implicit val mockDecoder: VPackDecoder[Mock] = VPackDecoder.gen
+  implicit val personEncoder: VPackEncoder[Person] = VPackEncoder.gen
+  implicit val personDecoder: VPackDecoder[Person] = VPackDecoder.gen
 
-  implicit val arangoInterpreter: HttpStoreAlgebra ~> IO = arangoInterpreter
-
-  val mock1 = Mock("aaa123", "Roger", 21)
-  val updatedMock = Mock("456", "NewName", 36)
   val mocksUri = uri"/mocks"
-  val mock1Uri = mocksUri / mock1.id
+  val mock1 = HttpResource(mocksUri / "aaa123", Mock("aaa123", "Roger", 21))
+  val updatedMock = Mock("456", "NewName", 36)
+  val person1 = HttpResource(uri"/person/roget" , Person("Roger"))
+  val person2 = HttpResource(uri"/person/that", Person("That"))
+  val likes = "likes"
 
-  def storeFetch(uri: Uri, mock: Mock)(implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Mock] = {
+  def storeAndFetch(
+      mockResource: HttpResource[Mock])(
+      implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Mock] = {
 
     import dsl._
 
     for {
-      savedResource <- store[Mock](uri, mock)
+      savedResource <- store[Mock](mockResource)
       fetchedResource <- fetch[Mock](savedResource.uri)
     } yield fetchedResource.body
   }
 
   def storeAndUpdate(
-      uri: Uri,
-      mock: Mock,
+      mockResource: HttpResource[Mock],
       newMock: Mock)(
       implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Mock] = {
 
     import dsl._
 
     for {
-      savedResource <- store[Mock](uri, mock)
+      savedResource <- store[Mock](mockResource)
       updatedResource <- store[Mock](savedResource.uri, newMock)
     } yield updatedResource.body
+  }
+
+  def storeAndLink[L: VPackEncoder : VPackDecoder, R: VPackEncoder : VPackDecoder](
+      left: HttpResource[L],
+      right: HttpResource[R],
+      linkRel: String)(
+      implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Unit] = {
+
+    import dsl._
+
+    for {
+      _ <- store[L](left)
+      _ <- store[R](right)
+      _ <- link(left, right, linkRel)
+    } yield ()
   }
 
   def fetchFromArango(uri: Uri)(implicit dsl: ArangoStoreDsl[HttpStoreAlgebra]): Free[HttpStoreAlgebra, Mock] =
@@ -85,12 +116,12 @@ trait MockServiceWithArango extends IOMatchersWithLogger {
 
 }
 
-trait AuthCases extends IOMatchersWithLogger {
+trait AuthCases extends ArangoInterpreter {
 
-  import http2._
-  import store._
   import error._
-  import interpreters.arangoStore._
+  import http._
+  import httpStore._
+  import io.freemonads.interpreters.arangoStore._
   import security._
   import jwt._
   import tsec.jwt.JWTClaims
@@ -124,9 +155,9 @@ trait AuthCases extends IOMatchersWithLogger {
       interpreters: Algebra ~> IO): Kleisli[IO, String, User] =
     Kleisli(id => storeDsl.fetch[User](userUri(id)).map(_.body).foldMap(interpreters))
 
-  val onFailure: AuthedRoutes[ApiError, IO] = Kleisli(req => OptionT.liftF(req.context))
+  val onFailure: AuthedRoutes[Throwable, IO] = Kleisli(req => OptionT.liftF(req.context))
 
-  def jwtTokenFromRequest[Algebra[_]](request: Request[IO])(implicit F: MonadThrow[Algebra]): Algebra[String] =
+  def jwtTokenFromAuthHeader[Algebra[_]](request: Request[IO])(implicit F: MonadThrow[Algebra]): Algebra[String] =
     request.headers.get[Authorization] match {
       case Some(credentials) => credentials match {
         case Authorization(Credentials.Token(_, jwtToken)) => jwtToken.pure[Algebra]
@@ -139,13 +170,13 @@ trait AuthCases extends IOMatchersWithLogger {
   def log[Algebra[_]](text: String): Free[Algebra, Unit] = Free.pure(println(text))
 
   def authUser[Algebra[_]](
-      implicit storeDsl: ArangoStoreDsl[Algebra],
+      implicit httpFreeDsl: HttpFreeDsl[Algebra],
+      storeDsl: ArangoStoreDsl[Algebra],
       securityDsl: SecurityDsl[Algebra],
-      interpreters: Algebra ~> IO): Kleisli[IO, Request[IO], User] =
-
+      interpreters: Algebra ~> IO): Kleisli[IO, Request[IO], Either[Throwable, User]] =
     Kleisli({ request =>
       val message = for {
-        jwtToken <- Free.liftF[Algebra, String](jwtTokenFromRequest(request))
+        jwtToken <- httpFreeDsl.getJwtTokenFromHeader(request)
         _ <- log(s"jwt token: $jwtToken")
         claim <- securityDsl.validateToken(Token(jwtToken))
         _ <- log(s"claim: $claim")
@@ -153,23 +184,24 @@ trait AuthCases extends IOMatchersWithLogger {
         _ <- log(s"user: $user")
       } yield user.body
 
-      message.foldMap(interpreters)
+      message.foldMap(interpreters).attempt
     })
 
   def authMiddleware[Algebra[_]](
-      implicit storeDsl: ArangoStoreDsl[Algebra],
+      implicit httpFreeDsl: HttpFreeDsl[Algebra],
+      storeDsl: ArangoStoreDsl[Algebra],
       securityDsl: SecurityDsl[Algebra],
-      interpreters: Algebra ~> IO): AuthMiddleware[IO, User] = AuthMiddleware(authUser, onFailure)
+      interpreters: Algebra ~> IO): AuthMiddleware[IO, User] = AuthMiddleware[IO, Throwable, User](authUser, onFailure)
 
   def publicRoutes[Algebra[_]](
       implicit httpFreeDsl: HttpFreeDsl[Algebra],
-      resourceDsl: ArangoStoreDsl[Algebra],
+      httpStoreDsl: ArangoStoreDsl[Algebra],
       interpreters: Algebra ~> IO): HttpRoutes[IO] = {
 
     val dsl = new Http4sDsl[IO]{}
     import dsl._
     import httpFreeDsl._
-    import resourceDsl._
+    import httpStoreDsl._
 
     HttpRoutes.of[IO] {
       case r @ POST -> Root / "users" =>
@@ -184,13 +216,15 @@ trait AuthCases extends IOMatchersWithLogger {
 
   def privateRoutes[Algebra[_]](
       implicit httpFreeDsl: HttpFreeDsl[Algebra],
-      resourceDsl: ArangoStoreDsl[Algebra],
+      httpStoreDsl: ArangoStoreDsl[Algebra],
+      errorDsl: ErrorDsl[Algebra],
       interpreters: Algebra ~> IO): AuthedRoutes[User, IO] = {
 
     val dsl = new Http4sDsl[IO]{}
     import dsl._
+    import errorDsl._
     import httpFreeDsl._
-    import resourceDsl._
+    import httpStoreDsl._
 
     val wrongAddressError = NonAuthorizedError("wrong address".some)
 
@@ -198,25 +232,37 @@ trait AuthCases extends IOMatchersWithLogger {
       case r @ GET -> Root / "profile" as user =>
         for {
           _ <- log(s"request for profile: $r")
-          userFree <- Free.pure[Algebra](user)
+          userFree <- Free.pure[Algebra, User](user)
         } yield Ok(userFree)
 
       case r @ PUT -> Root / "users" / address as user =>
         for {
           UserUpdate(newUsername) <- parseRequest[IO, UserUpdate](r.req)
-          _ <- Free.liftF[IO, String](if (address == user.address) ().pure[IO] else IO.raiseError(wrongAddressError))
+          _ <-
+            if (address == user.address)
+              Free.pure[Algebra, Unit](())
+            else {
+              raiseError(wrongAddressError)
+            }
           updatedUser <- store[User](r.req.uri, user.copy(username = newUsername.some))
-        } yield updatedUser.ok[IO]
+        } yield Ok(updatedUser.body)
     }
   }
 
-  type CombinedAlgebraA[R] = EitherK[HttpStoreAlgebra, SecurityAlgebra, R]
-  type CombinedAlgebra[R] = EitherK[Http4sAlgebra, CombinedAlgebraA, R]
+  type CombinedAlgebraA[R] = EitherK[SecurityAlgebra, ErrorAlgebra, R]
+  type CombinedAlgebraB[R] = EitherK[HttpStoreAlgebra, CombinedAlgebraA, R]
+  type CombinedAlgebra[R] = EitherK[HttpFreeAlgebra, CombinedAlgebraB, R]
 
   implicit val securityDsl = SecurityDsl.instance[CombinedAlgebra]
 
+
   implicit val interpreters: CombinedAlgebra ~> IO =
-    (httpFreeInterpreter[IO] or (arangoIoInterpreter or jwtSecurityInterpreter[IO]))
+    (httpFreeInterpreter[IO]
+        or (arangoInterpreter
+          or (jwtSecurityInterpreter[IO]
+            or monadThrowInterpreter[IO])))
+
+
 
   val authMiddlewareInstance = authMiddleware[CombinedAlgebra]
 
@@ -256,7 +302,7 @@ class ArangoServiceIT(env: Env)
         with AuthCases
         with Http4FreeIOMatchers {
 
-  import http.resource._
+  import httpStore._
 
   implicit val ee = env.executionEnv
   implicit val dsl = HttpStoreDsl.instance[HttpStoreAlgebra, VPackEncoder, VPackDecoder]
@@ -266,6 +312,7 @@ class ArangoServiceIT(env: Env)
       Store a new resource with specific id                   $storeNewResource
       Store and fetch from ArangoDB                           $storeAndFetch
       Store and update from ArangoDB                          $storeAndUpdate
+      Store and link two resources                            $storeAndLinkResources
       Return not found error when document doesn't exist      $returnNotFound
       Store a resource using HTTP API                         $storeResource
 
@@ -273,13 +320,17 @@ class ArangoServiceIT(env: Env)
 
   def arangoIsReady: MatchResult[Future[Boolean]] = isContainerReady(arangoContainer) must beTrue.await
 
-  def storeNewResource: MatchResult[Any] = dsl.store[Mock](mock1Uri, mock1) must resultOk(RestResource(mock1Uri, mock1))
+  def storeNewResource: MatchResult[Any] = dsl.store[Mock](mocksUri, mock1.body).map(_.body) must matchFree(mock1.body)
 
-  def storeAndFetch: MatchResult[Any] = storeFetch(mocksUri, mock1) must resultOk(mock1)
+  def storeAndFetch: MatchResult[Any] = storeAndFetch(mock1) must matchFree(mock1.body)
 
-  def storeAndUpdate: MatchResult[Any] = storeAndUpdate(mocksUri, mock1, updatedMock) must resultOk(updatedMock)
+  def storeAndUpdate: MatchResult[Any] = storeAndUpdate(mock1, updatedMock) must matchFree(updatedMock)
 
-  def returnNotFound: MatchResult[Any] = fetchFromArango(uri"/emptyCollection/123") must resultErrorNotFound
+  def storeAndLinkResources: MatchResult[Any] =
+    (storeAndLink(person1, person2, likes)  must matchFree(())) and
+        (storeAndLink(person1, mock1, likes) must matchFree(()))
+
+  def returnNotFound: MatchResult[Any] = fetchFromArango(uri"/emptyCollection/123") must matchFreeErrorNotFound
 
   def storeResource: MatchResult[Any] =
     (userService.orNotFound(createUserRequest) must returnValue { (response: Response[IO]) =>
@@ -293,7 +344,4 @@ class ArangoServiceIT(env: Env)
         userService.orNotFound(updateUserRequest) must returnValue { response: Response[IO] =>
           response must haveStatus(Ok) and (response must haveBody(expectedUpdatedUser))
       })
-
-
-
 }
