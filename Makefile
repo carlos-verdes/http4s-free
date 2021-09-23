@@ -16,6 +16,10 @@ gitRebase:
 		git checkout $(CURRENT_BRANCH) && \
 		git rebase develop
 
+.PHONY: gitAmmend
+gitAmmend:
+	git add . && git commit --amend --no-edit && git push --force origin $(CURRENT_BRANCH)
+
 .PHONY: killJava
 killJava:
 	ps ax | grep java | grep -v 'grep' | cut -d '?' -f1 | xargs kill -9
@@ -52,4 +56,9 @@ testMockCreate:
 	curl -i --header "Content-Type: application/json" \
 		--request POST \
 		--data '{ "name": "Roger", "age": 21 }' \
-		http://localhost:8080/mocks
+		http://192.168.0.130:8080/mocks && \
+		curl -i --header "Content-Type: application/json" \
+		--request POST \
+		--data '{ "name": "That", "age": 21 }' \
+		http://192.168.0.130:8080/mocks && \
+		curl -i --request POST http://192.168.0.130:8080/mocks/roger/brother/that
