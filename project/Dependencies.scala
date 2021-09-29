@@ -4,10 +4,11 @@ import sbt._
 object Dependencies {
 
   object Versions {
-    val catsV = "2.6.1" //https://github.com/typelevel/cats/releases
-    val fs2Version = "2.5.6" //https://github.com/functional-streams-for-scala/fs2/releases
-    val http4sV = "0.22.0" //https://github.com/http4s/http4s/releases
-    val circeV = "0.14.0-M7" //https://github.com/circe/circe/releases
+    val catsV = "2.6.1" // https://github.com/typelevel/cats/releases
+    val catsTaglessMacrosV = "0.14.0" // https://github.com/typelevel/cats-tagless
+    val fs2Version = "2.5.6" // https://github.com/functional-streams-for-scala/fs2/releases
+    val http4sV = "0.22.0" // https://github.com/http4s/http4s/releases
+    val circeV = "0.14.0-M7" // https://github.com/circe/circe/releases
     val avokkaV = "0.0.7"
     val tsecV = "0.3.0-M1"
     val web3jVersion = "5.0.0"
@@ -28,6 +29,7 @@ object Dependencies {
     val http4sCirce        = "org.http4s"         %% "http4s-circe"                % Versions.http4sV
     val catsCore           = "org.typelevel"      %% "cats-core"                   % Versions.catsV
     val catsFree           = "org.typelevel"      %% "cats-free"                   % Versions.catsV
+    val catsTaglessMacros  = "org.typelevel"      %% "cats-tagless-macros"         % Versions.catsTaglessMacrosV
     val circeCore          = "io.circe"           %% "circe-core"                  % Versions.circeV
     val circeGeneric       = "io.circe"           %% "circe-generic"               % Versions.circeV
     val circeGenericExtras = "io.circe"           %% "circe-generic-extras"        % Versions.circeV

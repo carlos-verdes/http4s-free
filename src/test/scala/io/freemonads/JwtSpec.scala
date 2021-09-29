@@ -6,8 +6,9 @@
 
 package io.freemonads
 
+import java.security.{NoSuchAlgorithmException, SecureRandom, Security}
+
 import cats.effect.IO
-import cats.free.Free
 import cats.implicits.catsSyntaxFlatMapOps
 import org.specs2.Specification
 import org.specs2.matcher.{IOMatchers, MatchResult}
@@ -16,7 +17,7 @@ import org.specs2.specification.core.SpecStructure
 
 trait JwtClaims {
 
-  import security._
+  import tagless.security._
 
   val subject = Subject("address1")
   val expectedClaim = Claim(subject)
@@ -35,18 +36,32 @@ class JwtSpec extends Specification with JwtClaims with specs2.Http4FreeIOMatche
         Raise error if token doesn't have subject $noSubjectError
         """
 
-  import security._
-  import jwt._
+  import error._
+  import tagless.security._
 
-  implicit val interpreter = jwtSecurityInterpreter[IO]
-  val dsl = SecurityDsl.instance[SecurityAlgebra]
+  implicit val dsl = tagless.security.jwt.ioJwtSecurityInterpreter
   import dsl._
 
+  // Windows hack
+  private def tsecWindowsFix(): Unit =
+    try {
+      SecureRandom.getInstance("NativePRNGNonBlocking")
+      ()
+    } catch {
+      case _: NoSuchAlgorithmException =>
+        val secureRandom = new SecureRandom()
+        val defaultSecureRandomProvider = secureRandom.getProvider.get(s"SecureRandom.${secureRandom.getAlgorithm}")
+        secureRandom.getProvider.put("SecureRandom.NativePRNGNonBlocking", defaultSecureRandomProvider)
+        Security.addProvider(secureRandom.getProvider)
+        ()
+    }
 
-  def createValidToken: MatchResult[Free[SecurityAlgebra, Claim]] =
-    (createToken(subject) >>= validateToken)  must matchFree(expectedClaim)
+  tsecWindowsFix()
+
+  def createValidToken: MatchResult[IO[Claim]] =
+    (createToken(subject) >>= validateToken)  must returnValue(expectedClaim)
 
   def noSubjectError: MatchResult[Any] =
-    validateToken(tokenWihtoutSubject)  must matchFreeNonAuthorizedError
+    validateToken(tokenWihtoutSubject)  must returnError[Claim, NonAuthorizedError]
 }
 

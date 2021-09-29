@@ -13,9 +13,7 @@ case class EdgeDefinitionCreate(
     collection: String,
     from: List[String],
     to: List[String]
-) {
-  def parameters = Map()
-}
+)
 
 object EdgeDefinitionCreate {
 
