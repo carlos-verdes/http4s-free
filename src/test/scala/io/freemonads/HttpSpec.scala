@@ -6,17 +6,16 @@
 
 package io.freemonads
 
-import cats.effect.{IO, MonadThrow}
+import cats.effect.IO
 import cats.syntax.applicative._
 import cats.syntax.option._
-import cats.~>
 import io.circe.generic.auto._
 import io.circe.{Decoder, Encoder}
 import io.freemonads.error.ResourceNotFoundError
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.headers.{Link, LinkValue, Location}
 import org.http4s.implicits.http4sLiteralsSyntax
-import org.http4s.{Response, Status}
+import org.http4s.{Response, Status, Uri}
 import org.specs2.Specification
 import org.specs2.matcher.{IOMatchers, MatchResult}
 import org.specs2.specification.core.SpecStructure
@@ -24,7 +23,8 @@ import org.specs2.specification.core.SpecStructure
 trait MockResources {
 
   import error._
-  import httpStore._
+  import tagless.http._
+  import tagless.httpStore._
 
   case class Mock(id: Option[String], name: String, age: Int)
 
@@ -37,17 +37,16 @@ trait MockResources {
   val newMockIdUri = uri"/mocks" / newMockId
   val newMock = Mock(Some(newMockId), "other name", 56)
 
-  implicit def interpreter[F[_]](implicit F: MonadThrow[F]):  HttpStoreAlgebra ~> F = new (HttpStoreAlgebra ~> F) {
-    override def apply[A](op: HttpStoreAlgebra[A]): F[A] = op match {
+  implicit object mockStoreDsl extends HttpStoreAlgebra[IO, Encoder, Decoder] {
+    override def store[R](uri: Uri, resource: R)(implicit S: Encoder[R], D: Decoder[R]): IO[HttpResource[R]] =
+      IO.pure(HttpResource(newMockIdUri, resource))
 
-      case Store(_, r, _, _) => F.pure(HttpResource(newMockIdUri, r))
+    override def fetch[R](resourceUri: Uri)(implicit deserializer: Decoder[R]): IO[HttpResource[R]] =
+      (if (resourceUri == existingUri) HttpResource(newMockIdUri, existingMock.asInstanceOf[R]).pure[IO]
+      else IO.raiseError[HttpResource[R]](ResourceNotFoundError(s"resource not found $resourceUri".some)))
 
-      case Fetch(resourceUri, _) =>
-        (if (resourceUri == existingUri) HttpResource(newMockIdUri, existingMock).pure[F]
-        else F.raiseError(ResourceNotFoundError(s"resource not found $resourceUri".some))).asInstanceOf[F[A]]
-
-      case LinkResources(_, _, _) => ().asInstanceOf[A].pure[F]
-    }
+    override def linkResources(leftUri: Uri, rightUri: Uri, relType: String): IO[Unit] =
+      ().pure[IO]
   }
 
   val responseCreated: IO[Response[IO]] = HttpResource(existingUri, existingMock).created
@@ -59,7 +58,6 @@ class HttpSpec
         with MockResources
         with IOMatchers
         with specs2.Http4FreeIOMatchers { def is: SpecStructure =
-
   s2"""
       ApiResource should: <br/>
       Store a resource                                $store
@@ -69,14 +67,13 @@ class HttpSpec
       Add Location header for created resources       $locationHeader
       """
 
-  import httpStore._
+  import tagless.http._
 
-  implicit val dsl = HttpStoreDsl.instance[HttpStoreAlgebra, Encoder, Decoder]
+  def store: MatchResult[Any] = mockStoreDsl.store[Mock](newMockIdUri, newMock).map(_.body) must returnValue(newMock)
+  def fetchFound: MatchResult[Any] = mockStoreDsl.fetch[Mock](existingUri).map(_.body) must returnValue(existingMock)
 
-  def store: MatchResult[Any] = dsl.store[Mock](newMockIdUri, newMock).map(_.body) must matchFree(newMock)
-  def fetchFound: MatchResult[Any] = dsl.fetch[Mock](existingUri).map(_.body) must matchFree(existingMock)
-  def fetchNotFound: MatchResult[Any] = dsl.fetch[Mock](nonexistingUri).map(_.body) must
-      matchFreeError[HttpStoreAlgebra, Mock, ResourceNotFoundError]
+  def fetchNotFound: MatchResult[Any] =
+    mockStoreDsl.fetch[Mock](nonexistingUri).map(_.body) must returnError[Mock, ResourceNotFoundError]
 
   def selfLinkHeader: MatchResult[Any] =
     HttpResource(existingUri, existingMock).ok[IO] must returnValue { (response: Response[IO]) =>
