@@ -49,8 +49,8 @@ trait MockResources {
       ().pure[IO]
   }
 
-  val responseCreated: IO[Response[IO]] = HttpResource(existingUri, existingMock).created
-  val responseOk: IO[Response[IO]] = HttpResource(existingUri, existingMock).ok
+  val responseCreated: Response[IO] = HttpResource(existingUri, existingMock).created
+  val responseOk: Response[IO] = HttpResource(existingUri, existingMock).ok
 }
 
 class HttpSpec
@@ -76,14 +76,14 @@ class HttpSpec
     mockStoreDsl.fetch[Mock](nonexistingUri).map(_.body) must returnError[Mock, ResourceNotFoundError]
 
   def selfLinkHeader: MatchResult[Any] =
-    HttpResource(existingUri, existingMock).ok[IO] must returnValue { (response: Response[IO]) =>
+    HttpResource(existingUri, existingMock).ok[IO].pure[IO] must returnValue { (response: Response[IO]) =>
       response must haveStatus(Status.Ok) and
           (response must haveBody(existingMock)) and
           (response must containHeader(Link(LinkValue(existingUri, Some("self")))))
     }
 
   def locationHeader: MatchResult[Any] =
-    HttpResource[Mock](existingUri, existingMock).created[IO] must returnValue { (response: Response[IO]) =>
+    HttpResource[Mock](existingUri, existingMock).created[IO].pure[IO] must returnValue { (response: Response[IO]) =>
       response must haveStatus(Status.Created) and
           (response must haveBody(existingMock)) and
           (response must containHeader(Location(existingUri)))

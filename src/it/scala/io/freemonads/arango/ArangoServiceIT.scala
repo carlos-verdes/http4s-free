@@ -197,8 +197,7 @@ trait AuthCases extends InterpretersAndDsls {
           userAddress = userRequest.address
           user = User(userAddress, userNonce, None)
           storedUser <- store[User](userUri(user), user)
-          response <- storedUser.created[IO]
-        } yield response
+        } yield storedUser.created[IO]
     }
   }
 

@@ -7,7 +7,8 @@ package io.freemonads
 
 import cats.Functor
 import cats.effect.{IO, Sync, Timer}
-import cats.implicits.{toFlatMapOps, toFunctorOps}
+import cats.implicits.toFunctorOps
+import cats.syntax.option._
 import io.circe.generic.auto._
 import io.circe.literal.JsonStringContext
 import io.freemonads.specs2.Http4FreeIOMatchers
@@ -50,14 +51,12 @@ trait RestRoutes extends IOMatchers {
     HttpRoutes.of[F] {
 
       case r @ POST -> Root / "mocks" =>
-        (for {
+        for {
           mockRequest <- parseRequest[Mock](r)
-          response <-
-              Created(mockRequest.copy(id = Some(createdId)), Location(uri"/mocks" / createdId))
-
+          mockResource = HttpResource(uri"/mocks" / createdId, mockRequest)
         } yield {
-          response
-        })
+          mockResource.map(_.copy(id = createdId.some)).created[F]
+        }
     }
   }
 

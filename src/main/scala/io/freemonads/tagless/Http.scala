@@ -6,7 +6,7 @@
 
 package io.freemonads.tagless
 
-import cats.Applicative
+import cats.{Applicative, Functor}
 import cats.data.{Kleisli, OptionT}
 import cats.effect.MonadThrow
 import cats.implicits.{catsSyntaxApplicativeError, toBifunctorOps, toFlatMapOps, toFunctorOps}
@@ -21,10 +21,18 @@ import org.log4s.getLogger
 
 object http {
 
-  case class HttpResource[R](uri: Uri, body: R)
-
   private val logger = getLogger
   val REL_SELF = "self"
+
+  case class HttpResource[R](uri: Uri, body: R)
+
+  object HttpResource {
+
+    implicit def functorInstance[R]: Functor[HttpResource] =  new Functor[HttpResource] {
+      override def map[A, B](resource: HttpResource[A])(f: A => B): HttpResource[B] =
+        resource.copy(body = f(resource.body))
+    }
+  }
 
   @finalAlg
   trait HttpAlgebra[F[_]] {
@@ -35,21 +43,15 @@ object http {
 
   implicit class HttpResourceOps[R](rr: HttpResource[R]) {
 
-    def ok[F[_]: Applicative](implicit EE: EntityEncoder[F, R]): F[Response[F]] = {
+    def ok[F[_]: Applicative](implicit EE: EntityEncoder[F, R]): Response[F] =
+      Response(status = Status.Ok)
+          .withHeaders(Link(LinkValue(rr.uri, rel = Some(REL_SELF))))
+          .withEntity[R](rr.body)
 
-      val dsl = new Http4sDsl[F]{}
-      import dsl._
-
-      Ok(rr.body, Link(LinkValue(rr.uri, rel = Some(REL_SELF))))
-    }
-
-    def created[F[_]: Applicative](implicit EE: EntityEncoder[F, R]): F[Response[F]] = {
-
-      val dsl = new Http4sDsl[F]{}
-      import dsl._
-
-      Created(rr.body, Location(rr.uri))
-    }
+    def created[F[_]: Applicative](implicit EE: EntityEncoder[F, R]): Response[F] =
+      Response(status = Status.Created)
+          .withHeaders(Location(rr.uri))
+          .withEntity[R](rr.body)
   }
 
   implicit def apiErrorToResponse[F[_]: Applicative](restError: Throwable): F[Response[F]] = {

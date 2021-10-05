@@ -54,15 +54,13 @@ object Main extends IOApp {
       case r @ GET -> Root / "mocks" / _ =>
         for  {
           mock <- fetch[Mock](r.uri)
-          response <- mock.ok[IO]
-        } yield response
+        } yield mock.ok[IO]
 
       case r @ POST -> Root / "mocks" =>
         for {
           mockRequest <- parseRequest[Mock](r)
           savedMock <- store[Mock](r.uri / mockRequest.name.toLowerCase, mockRequest)
-          response <- savedMock.created[IO]
-        } yield response
+        } yield savedMock.created[IO]
 
       case POST -> Root / "mocks" / leftId / relType / rightId =>
         for {
