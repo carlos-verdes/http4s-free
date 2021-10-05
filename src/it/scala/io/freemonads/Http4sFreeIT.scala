@@ -5,8 +5,10 @@
 
 package io.freemonads
 
+import cats.Functor
 import cats.effect.{IO, Sync, Timer}
-import cats.{Functor, ~>}
+import cats.implicits.toFunctorOps
+import cats.syntax.option._
 import io.circe.generic.auto._
 import io.circe.literal.JsonStringContext
 import io.freemonads.specs2.Http4FreeIOMatchers
@@ -23,9 +25,12 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait RestRoutes extends IOMatchers {
 
-  import http._
+  import tagless.http._
 
   case class Mock(id: Option[String], name: String, age: Int)
+
+  implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
+  implicit val interpreters = tagless.http.io.ioHttpAlgebraInterpreter
 
   val newMock = Mock(None, "name123", 23)
   val createdId = "id123"
@@ -37,34 +42,25 @@ trait RestRoutes extends IOMatchers {
   val existingId = "id456"
   val existingMock = Mock(Some(existingId), "name123", 23)
 
-  def testRoutes[F[_]: Sync : Timer : Functor, Algebra[_]](
-      implicit httpFreeDsl: HttpFreeDsl[Algebra],
-      interpreters: Algebra ~> F): HttpRoutes[F] = {
+  def testRoutes[F[_]: Sync : Timer : Functor](implicit httpTaglessDsl: HttpAlgebra[F]): HttpRoutes[F] = {
 
     val dsl = new Http4sDsl[F]{}
     import dsl._
-    import httpFreeDsl._
+    import httpTaglessDsl._
 
     HttpRoutes.of[F] {
-      /*
-      case GET -> Root / "mocks" =>
-        for  {
-          mock <- Free.pure[Algebra, Mock](Mock(Some("id123"), "name123", 23))
-        } yield Ok(mock)
-       */
+
       case r @ POST -> Root / "mocks" =>
         for {
-          mockRequest <- parseRequest[F, Mock](r)
+          mockRequest <- parseRequest[Mock](r)
+          mockResource = HttpResource(uri"/mocks" / createdId, mockRequest)
         } yield {
-          Created(mockRequest.copy(id = Some(createdId)), Location(uri"/mocks" / createdId))
+          mockResource.map(_.copy(id = createdId.some)).created[F]
         }
     }
   }
 
-  implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
-  implicit val interpreters = httpFreeInterpreter[IO]
-
-  val testService = testRoutes[IO, HttpFreeAlgebra]
+  val testService = apiErrorMidleware(testRoutes[IO])
 
 
   val createMockRequest: Request[IO] = Request[IO](Method.POST, uri"/mocks").withEntity(newMock)
@@ -86,9 +82,9 @@ class Http4sFreeIT extends Specification with RestRoutes with Http4FreeIOMatcher
           Response with 500 error for runtime issues     $manageRuntimeErrors
           """
 
-  import org.http4s.dsl.io._
   import error._
-  import http._
+  import org.http4s.dsl.io._
+  import tagless.http._
 
   def httpWithFreeMonads: MatchResult[Any] =
     testService.orNotFound(createMockRequest) must returnValue { (response: Response[IO]) =>

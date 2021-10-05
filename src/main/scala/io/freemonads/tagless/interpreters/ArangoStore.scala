@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-package io.freemonads
+package io.freemonads.tagless
 package interpreters
 
 import avokka.arangodb.fs2.Arango
@@ -15,29 +15,30 @@ import avokka.arangodb.protocol.{ArangoClient, ArangoError, ArangoResponse}
 import avokka.arangodb.types.{CollectionName, DocumentKey}
 import avokka.arangodb.{ArangoCollection, ArangoGraph}
 import avokka.velocypack.{VObject, VPack, VPackDecoder, VPackEncoder, VPackError}
+import cats.MonadThrow
 import cats.effect.{IO, Resource}
 import cats.implicits._
-import cats.{FlatMap, MonadThrow, ~>}
 import org.http4s.Uri.Path.Root
-import org.http4s.dsl.io._
+import org.http4s.dsl.io./
 import org.http4s.implicits.http4sLiteralsSyntax
 import org.http4s.{Status, Uri}
 import org.log4s.getLogger
 
-
 object arangoStore {
 
-  import error._
+  import io.freemonads.error._
+  import http._
   import httpStore._
+
+  type ArangoStoreAlgebra[F[_]] = HttpStoreAlgebra[F, VPackEncoder, VPackDecoder]
 
   val RESOURCE_RELS_GRAPH = "resource-rels"
 
   private val logger = getLogger
 
-  type ArangoStoreDsl[Algebra[_]] = HttpStoreDsl[Algebra, VPackEncoder, VPackDecoder]
-
   case class ColKeyOp(collectionName: CollectionName, key: Option[DocumentKey])
   case class ColKey(collectionName: CollectionName, key: DocumentKey)
+
 
   object ColKey {
 
@@ -48,7 +49,7 @@ object arangoStore {
         case _ => F.raiseError(RequestFormatError(s"Url not supported for storage: $uri".some))
       }
 
-    def fromUri[F[_]: FlatMap](uri: Uri)(implicit F: MonadThrow[F]): F[ColKey] =
+    def fromUri[F[_]](uri: Uri)(implicit F: MonadThrow[F]): F[ColKey] =
       for {
         ColKeyOp(collectionName, keyOp) <- ColKey.fromUriOp[F](uri)
         key <- F.fromOption(keyOp, RequestFormatError(s"Uri not supported to fetch docs: $uri".some))
@@ -103,47 +104,38 @@ object arangoStore {
   def createEdge[F[_]: MonadThrow](collection: ArangoCollection[F]): F[CollectionInfo] =
     createCollection(collection, CollectionType.Edge)
 
-  def arangoStoreInterpreter(clientR: Resource[IO, Arango[IO]]): HttpStoreAlgebra ~> IO = new (HttpStoreAlgebra ~> IO) {
-    override def apply[A](op: HttpStoreAlgebra[A]): IO[A] = {
 
+  implicit class ArangoStoreInterpreter(
+      clientR: Resource[IO, Arango[IO]]) extends HttpStoreAlgebra[IO, VPackEncoder, VPackDecoder] {
+
+    override def store[R](uri: Uri, resource: R)(implicit S: VPackEncoder[R], D: VPackDecoder[R]): IO[HttpResource[R]] =
+      clientR.use { client => upsertResource(client, uri, resource) }
+
+    override def fetch[R](resourceUri: Uri)(implicit deserializer: VPackDecoder[R]): IO[HttpResource[R]] =
+      clientR.use { client =>
+        for {
+          ColKey(collectionName, key) <- ColKey.fromUri[IO](resourceUri)
+          collection = client.db.collection(collectionName)
+          document <- collection.document(key).read[R]().handleResponse()
+        } yield HttpResource(resourceUri, document)
+      }
+
+    override def linkResources(leftUri: Uri, rightUri: Uri, relType: String): IO[Unit] =
       clientR.use { client =>
 
         implicit val _client = client
 
-        op match {
-          case Store(uri, resourceBody, serializer, deserializer) =>
-
-            implicit val S: VPackEncoder[A] = serializer.asInstanceOf[VPackEncoder[A]]
-            implicit val D: VPackDecoder[A] = deserializer.asInstanceOf[VPackDecoder[A]]
-            val resource: A = resourceBody.asInstanceOf[A]
-
-            upsertResource(client, uri, resource)
-
-          case Fetch(resourceUri, deser) =>
-
-            implicit val deserializer: VPackDecoder[A] = deser.asInstanceOf[VPackDecoder[A]]
-
-            for {
-              ColKey(collectionName, key) <- ColKey.fromUri[IO](resourceUri)
-              collection = client.db.collection(collectionName)
-              document <- collection.document(key).read[A]().handleResponse()
-            } yield HttpResource(resourceUri, document).asInstanceOf[A]
-
-          case LinkResources(leftUri, rightUri, relType) =>
-
-            for {
-              ColKey(leftCol, leftKey) <- ColKey.fromUri[IO](leftUri)
-              ColKey(rightCol, rightKey) <- ColKey.fromUri[IO](rightUri)
-              edge = client.db.collection(CollectionName(relType))
-              _ <- edge.info().handleResponse().ifNotFound(createEdge(edge))
-              edgeDoc = buildEdgeDoc(leftKey.repr + "-" + rightKey.repr, leftUri, rightUri)
-              _ <- edge.documents.insert(document = edgeDoc, overwrite = true, returnNew = true).handleResponse()
-              edgeDefinition = GraphEdgeDefinition(relType, List(leftCol.repr), List(rightCol.repr))
-              _ <- updateGraphDefinition(edgeDefinition)
-            } yield ().asInstanceOf[A]
-        }
+        for {
+          ColKey(leftCol, leftKey) <- ColKey.fromUri[IO](leftUri)
+          ColKey(rightCol, rightKey) <- ColKey.fromUri[IO](rightUri)
+          edge = client.db.collection(CollectionName(relType))
+          _ <- edge.info().handleResponse().ifNotFound(createEdge(edge))
+          edgeDoc = buildEdgeDoc(leftKey.repr + "-" + rightKey.repr, leftUri, rightUri)
+          _ <- edge.documents.insert(document = edgeDoc, overwrite = true, returnNew = true).handleResponse()
+          edgeDefinition = GraphEdgeDefinition(relType, List(leftCol.repr), List(rightCol.repr))
+          _ <- updateGraphDefinition(edgeDefinition)
+        } yield ()
       }
-    }
   }
 
   def updateGraphDefinition[F[_]](
@@ -180,12 +172,12 @@ object arangoStore {
     graph.info().handleResponse().ifNotFound(graph.create().handleResponse()).map(_.graph)
   }
 
-  private def upsertResource[A](
+  private def upsertResource[R](
       client: Arango[IO],
       uri: Uri,
-      resource: A)(
-      implicit E: VPackEncoder[A],
-      D: VPackDecoder[A]) = {
+      resource: R)(
+      implicit E: VPackEncoder[R],
+      D: VPackDecoder[R]): IO[HttpResource[R]] = {
     for {
       ColKeyOp(collectionName, keyOp) <- ColKey.fromUriOp[IO](uri)
       doc = buildDocument(resource, keyOp)
@@ -193,7 +185,7 @@ object arangoStore {
       _ <- collection.info().handleResponse().ifNotFound(createCollection(collection))
       stored <- collection.documents.insert(document = doc, overwrite = true, returnNew = true).handleResponse()
       newDoc <- IO.fromOption(stored.`new`)(RuntimeError(new IllegalAccessException("Not expected error").some))
-      parsedDocument <- IO.fromEither(D.decode(newDoc)).handleErrorWith[A](handleErrors[IO, A])
-    } yield HttpResource(uri"/" / collectionName.repr / stored._key.repr, parsedDocument).asInstanceOf[A]
+      parsedDocument <- IO.fromEither(D.decode(newDoc)).handleErrorWith[R](handleErrors[IO, R])
+    } yield HttpResource(uri"/" / collectionName.repr / stored._key.repr, parsedDocument)
   }
 }

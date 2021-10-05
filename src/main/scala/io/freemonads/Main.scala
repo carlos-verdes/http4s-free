@@ -9,16 +9,13 @@ package io.freemonads
 import avokka.arangodb.ArangoConfiguration
 import avokka.arangodb.fs2.Arango
 import avokka.velocypack._
-import cats.data.EitherK
 import cats.effect.{ExitCode, IO, IOApp}
-import cats.~>
 import io.circe.generic.auto._
-import io.freemonads.interpreters.arangoStore.arangoStoreInterpreter
+import io.freemonads.tagless.security.SecurityAlgebra
 import org.http4s.HttpRoutes
 import org.http4s.blaze.server.BlazeServerBuilder
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
-import org.http4s.headers.Location
 import org.http4s.implicits._
 import org.typelevel.log4cats._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -28,19 +25,27 @@ case class Mock(name: String, age: Int)
 
 object Main extends IOApp {
 
-  import httpStore._
-  import http._
+  import tagless.http._
+  import tagless.httpStore._
 
-  type TestAlgebra[R] = EitherK[HttpFreeAlgebra,  HttpStoreAlgebra, R]
-  type ArangoResourceDsl = HttpStoreDsl[TestAlgebra, VPackEncoder, VPackDecoder]
+  type ArangoResourceDsl = HttpStoreAlgebra[IO, VPackEncoder, VPackDecoder]
+
+  import tagless.interpreters.arangoStore._
+  import tagless.security.jwt._
+
+  val arangoConfig = ArangoConfiguration.load()
+  val arangoResource = Arango(arangoConfig)
+
+  implicit val storeDsl: ArangoStoreAlgebra[IO] = ArangoStoreInterpreter(arangoResource)
+  implicit val securityDsl: SecurityAlgebra[IO] = ioJwtSecurityInterpreter
+  implicit val httpFreeDsl: HttpAlgebra[IO] = tagless.http.io.ioHttpAlgebraInterpreter
 
   implicit val mockEncoder: VPackEncoder[Mock] = VPackEncoder.gen
   implicit val mockDecoder: VPackDecoder[Mock] = VPackDecoder.gen
 
   def testRoutes(
-      implicit httpFreeDsl: HttpFreeDsl[TestAlgebra],
-      storeDsl: ArangoResourceDsl,
-      interpreters: TestAlgebra ~> IO): HttpRoutes[IO] = {
+      implicit httpFreeDsl: HttpAlgebra[IO],
+      storeDsl: ArangoResourceDsl): HttpRoutes[IO] = {
 
     import httpFreeDsl._
     import storeDsl._
@@ -49,29 +54,23 @@ object Main extends IOApp {
       case r @ GET -> Root / "mocks" / _ =>
         for  {
           mock <- fetch[Mock](r.uri)
-        } yield Ok(mock.body)
+        } yield mock.ok[IO]
 
       case r @ POST -> Root / "mocks" =>
         for {
-          mockRequest <- parseRequest[IO, Mock](r)
+          mockRequest <- parseRequest[Mock](r)
           savedMock <- store[Mock](r.uri / mockRequest.name.toLowerCase, mockRequest)
-        } yield Created(savedMock.body, Location(savedMock.uri))
+        } yield savedMock.created[IO]
 
       case POST -> Root / "mocks" / leftId / relType / rightId =>
         for {
-          _ <- link(uri"/" / "mocks" / leftId, uri"/" / "mocks" / rightId, relType)
-        } yield Ok()
+          _ <- linkResources(uri"/" / "mocks" / leftId, uri"/" / "mocks" / rightId, relType)
+          response <- Ok()
+        } yield response
     }
   }
 
-  val arangoConfig = ArangoConfiguration.load()
-  val arangoResource = Arango(arangoConfig)
-
   implicit def unsafeLogger: Logger[IO] = Slf4jLogger.getLogger[IO]
-
-  implicit def interpreters: TestAlgebra ~> IO =
-    httpFreeInterpreter[IO] or arangoStoreInterpreter(arangoResource)
-
 
   val app = testRoutes.orNotFound
 
